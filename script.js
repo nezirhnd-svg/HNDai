@@ -1,3 +1,14 @@
+// Trade State
+
+let activeTrade = null;
+
+let entryPrice = null;
+
+let stopLoss = null;
+
+let takeProfit = null;
+
+let tradeOpen = false;
 // ==============================
 // TradeAI Pro - Script v1
 // ==============================
