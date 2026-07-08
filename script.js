@@ -1,7 +1,6 @@
 let currentCoin = "BTCUSDT";
 let currentInterval = "15";
 let chart;
-let currentCoin = "BTCUSDT";
 let currentTimeframe = "15";
 
 const coinSelect = document.getElementById("coinSelect");
