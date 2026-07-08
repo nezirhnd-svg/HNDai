@@ -1,8 +1,13 @@
+let currentCoin = "BTCUSDT";
+let currentTimeframe = "15";
+
+const coinSelect = document.getElementById("coinSelect");
+const timeframe = document.getElementById("timeframe");
 // TradingView Chart
 new TradingView.widget({
     autosize: true,
-    symbol: "BINANCE:BTCUSDT",
-    interval: "15",
+    symbol: "BINANCE:" + currentCoin,
+   interval: currentTimeframe,
     timezone: "Etc/UTC",
     theme: "dark",
     style: "1",
@@ -16,7 +21,7 @@ new TradingView.widget({
 async function updatePrice() {
     try {
         const res = await fetch(
-            "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+            `https://api.binance.com/api/v3/ticker/price?symbol=${currentCoin}`    
         );
 
         const data = await res.json();
@@ -59,3 +64,18 @@ async function updatePrice() {
 
 updatePrice();
 setInterval(updatePrice, 5000);
+coinSelect.addEventListener("change", () => {
+
+    currentCoin = coinSelect.value;
+
+    location.reload();
+
+});
+
+timeframe.addEventListener("change", () => {
+
+    currentTimeframe = timeframe.value;
+
+    location.reload();
+
+});
