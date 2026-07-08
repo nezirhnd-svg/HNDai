@@ -14,6 +14,21 @@ let tradeOpen = false;
 // ==============================
 
 let currentCoin = "BTCUSDT";
+// =========================
+// TRADE ENGINE
+// =========================
+
+let activeTrade = null;
+
+let tradeOpen = false;
+
+let entryPrice = 0;
+
+let stopLoss = 0;
+
+let takeProfit = 0;
+
+let tradeSide = "";
 let currentInterval = "15";
 
 // TradingView Grafik
@@ -96,7 +111,32 @@ coinSelect.addEventListener("change", () => {
     loadChart();
 
     updatePrice();
+    async function getCandles() {
 
+    const res = await fetch(
+        `https://api.binance.com/api/v3/klines?symbol=${currentCoin}&interval=${currentInterval}m&limit=250`
+    );
+
+    const data = await res.json();
+
+    return data.map(c => Number(c[4]));
+
+}
+function EMA(values, period) {
+
+    const k = 2 / (period + 1);
+
+    let ema = values[0];
+
+    for (let i = 1; i < values.length; i++) {
+
+        ema = values[i] * k + ema * (1 - k);
+
+    }
+
+    return ema;
+
+}
 });
 
 // Timeframe değiştir
@@ -120,3 +160,57 @@ setInterval(() => {
     updateSignal();
 
 },5000);
+async function analyzeMarket() {
+
+    const prices = await getCandles();
+
+    const ema20 = EMA(prices,20);
+
+    const ema50 = EMA(prices,50);
+
+    if(tradeOpen) return;
+
+    if(ema20 > ema50){
+
+        openTrade("LONG");
+
+    }
+
+    if(ema20 < ema50){
+
+        openTrade("SHORT");
+
+    }
+
+}
+function openTrade(side){
+
+    tradeOpen = true;
+
+    tradeSide = side;
+
+    entryPrice = Number(document.getElementById("entry").innerText);
+
+    if(side=="LONG"){
+
+        stopLoss = entryPrice * 0.99;
+
+        takeProfit = entryPrice * 1.02;
+
+    }else{
+
+        stopLoss = entryPrice * 1.01;
+
+        takeProfit = entryPrice * 0.98;
+
+    }
+
+    document.getElementById("signal").innerText = side;
+
+    document.getElementById("entry").innerText = entryPrice.toFixed(2);
+
+    document.getElementById("sl").innerText = stopLoss.toFixed(2);
+
+    document.getElementById("tp").innerText = takeProfit.toFixed(2);
+
+}
