@@ -1,10 +1,17 @@
 let currentCoin = "BTCUSDT";
+let currentInterval = "15";
+let chart;
+let currentCoin = "BTCUSDT";
 let currentTimeframe = "15";
 
 const coinSelect = document.getElementById("coinSelect");
 const timeframe = document.getElementById("timeframe");
 // TradingView Chart
-new TradingView.widget({
+function loadChart() {
+
+document.getElementById("tvchart").innerHTML="";
+
+chart = new TradingView.widget({
     autosize: true,
     symbol: "BINANCE:" + currentCoin,
    interval: currentTimeframe,
@@ -77,5 +84,17 @@ timeframe.addEventListener("change", () => {
     currentTimeframe = timeframe.value;
 
     location.reload();
+
+});
+loadChart();
+updatePrice();
+setInterval(updatePrice,5000);
+    document.getElementById("coinSelect").addEventListener("change",function(){
+
+currentCoin=this.value;
+
+loadChart();
+
+updatePrice();
 
 });
