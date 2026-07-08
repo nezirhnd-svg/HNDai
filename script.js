@@ -1,99 +1,111 @@
+// ==============================
+// TradeAI Pro - Script v1
+// ==============================
+
 let currentCoin = "BTCUSDT";
 let currentInterval = "15";
-let chart;
-let currentTimeframe = "15";
 
-const coinSelect = document.getElementById("coinSelect");
-const timeframe = document.getElementById("timeframe");
-// TradingView Chart
+// TradingView Grafik
 function loadChart() {
+    document.getElementById("tvchart").innerHTML = "";
 
-document.getElementById("tvchart").innerHTML="";
+    new TradingView.widget({
+        autosize: true,
+        symbol: "BINANCE:" + currentCoin,
+        interval: currentInterval,
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "1",
+        locale: "tr",
+        container_id: "tvchart",
+        hide_side_toolbar: false,
+        allow_symbol_change: false,
+        save_image: false
+    });
+}
 
-chart = new TradingView.widget({
-    autosize: true,
-    symbol: "BINANCE:" + currentCoin,
-   interval: currentTimeframe,
-    timezone: "Etc/UTC",
-    theme: "dark",
-    style: "1",
-    locale: "tr",
-    container_id: "tvchart",
-    hide_side_toolbar: false,
-    allow_symbol_change: true
-});
-
-// Binance canlı fiyat
+// Binance Canlı Fiyat
 async function updatePrice() {
     try {
         const res = await fetch(
-            `https://api.binance.com/api/v3/ticker/price?symbol=${currentCoin}`    
+            `https://api.binance.com/api/v3/ticker/price?symbol=${currentCoin}`
         );
 
         const data = await res.json();
+        const price = parseFloat(data.price);
 
-        const price = Number(data.price);
-
-        // Fiyat
         document.getElementById("entry").innerText = price.toFixed(2);
+        document.getElementById("sl").innerText = (price * 0.99).toFixed(2);
+        document.getElementById("tp").innerText = (price * 1.02).toFixed(2);
 
-        // Basit TP / SL
-        document.getElementById("sl").innerText =
-            (price * 0.99).toFixed(2);
-
-        document.getElementById("tp").innerText =
-            (price * 1.02).toFixed(2);
-
-        // Basit AI sinyali (örnek)
-        const signal = Math.random();
-
-        if (signal > 0.66) {
-            document.getElementById("signal").innerText = "LONG";
-            document.getElementById("signal").style.color = "#22c55e";
-            document.getElementById("confidence").innerText =
-                (80 + Math.random() * 20).toFixed(0) + "%";
-        } else if (signal < 0.33) {
-            document.getElementById("signal").innerText = "SHORT";
-            document.getElementById("signal").style.color = "#ef4444";
-            document.getElementById("confidence").innerText =
-                (80 + Math.random() * 20).toFixed(0) + "%";
-        } else {
-            document.getElementById("signal").innerText = "WAIT";
-            document.getElementById("signal").style.color = "#facc15";
-            document.getElementById("confidence").innerText = "50%";
-        }
-
-    } catch (err) {
-        console.error(err);
+    } catch (e) {
+        console.error(e);
     }
 }
 
-updatePrice();
-setInterval(updatePrice, 5000);
+// Demo AI
+function updateSignal() {
+
+    const rnd = Math.random();
+
+    if (rnd > 0.66) {
+        signal.innerText = "LONG";
+        signal.style.color = "#22c55e";
+        confidence.innerText = "91%";
+    }
+    else if (rnd < 0.33) {
+        signal.innerText = "SHORT";
+        signal.style.color = "#ef4444";
+        confidence.innerText = "88%";
+    }
+    else {
+        signal.innerText = "WAIT";
+        signal.style.color = "#facc15";
+        confidence.innerText = "53%";
+    }
+
+    bos.innerText = "Bullish";
+    choch.innerText = "-";
+    ob.innerText = "Detected";
+    fvg.innerText = "Open";
+    liq.innerText = "Above";
+
+    ema20.innerText = "-";
+    ema50.innerText = "-";
+    ema200.innerText = "-";
+    rsi.innerText = "-";
+    macd.innerText = "-";
+}
+
+// Coin değiştir
 coinSelect.addEventListener("change", () => {
 
     currentCoin = coinSelect.value;
 
-    location.reload();
+    loadChart();
+
+    updatePrice();
 
 });
 
+// Timeframe değiştir
 timeframe.addEventListener("change", () => {
 
-    currentTimeframe = timeframe.value;
+    currentInterval = timeframe.value;
 
-    location.reload();
-
-});
-loadChart();
-updatePrice();
-setInterval(updatePrice,5000);
-    document.getElementById("coinSelect").addEventListener("change",function(){
-
-currentCoin=this.value;
-
-loadChart();
-
-updatePrice();
+    loadChart();
 
 });
+
+// Başlat
+loadChart();
+updatePrice();
+updateSignal();
+
+setInterval(() => {
+
+    updatePrice();
+
+    updateSignal();
+
+},5000);
