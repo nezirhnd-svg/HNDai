@@ -1,1 +1,79 @@
+// ==========================
+// Binance API Module
+// ==========================
 
+const BINANCE_API = "https://api.binance.com/api/v3";
+
+let marketData = [];
+let currentPrice = 0;
+
+// Mum verileri
+async function fetchCandles(symbol, interval = "15m", limit = 500) {
+
+    try {
+
+        const response = await fetch(
+            `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+        );
+
+        const data = await response.json();
+
+        marketData = data.map(candle => ({
+            time: Number(candle[0]),
+            open: Number(candle[1]),
+            high: Number(candle[2]),
+            low: Number(candle[3]),
+            close: Number(candle[4]),
+            volume: Number(candle[5])
+        }));
+
+        return marketData;
+
+    } catch (e) {
+
+        console.error("Candles Error", e);
+
+        return [];
+
+    }
+
+}
+
+// Canlı fiyat
+async function fetchPrice(symbol) {
+
+    try {
+
+        const response = await fetch(
+            `${BINANCE_API}/ticker/price?symbol=${symbol}`
+        );
+
+        const data = await response.json();
+
+        currentPrice = Number(data.price);
+
+        return currentPrice;
+
+    } catch (e) {
+
+        console.error("Price Error", e);
+
+        return 0;
+
+    }
+
+}
+
+// Kapanış fiyatları
+function getClosePrices() {
+
+    return marketData.map(c => c.close);
+
+}
+
+// Hacim
+function getVolumes() {
+
+    return marketData.map(c => c.volume);
+
+}
