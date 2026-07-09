@@ -50,3 +50,22 @@ async function fetchPrice(symbol) {
         return 0;
     }
 }
+// Close fiyatlarını döndür
+function getClosePrices() {
+    return candles.map(candle => candle.close);
+}
+
+// High fiyatlarını döndür
+function getHighPrices() {
+    return candles.map(candle => candle.high);
+}
+
+// Low fiyatlarını döndür
+function getLowPrices() {
+    return candles.map(candle => candle.low);
+}
+
+// Volume verilerini döndür
+function getVolumes() {
+    return candles.map(candle => candle.volume);
+}
