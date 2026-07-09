@@ -73,3 +73,28 @@ function findSwingLows(lookback = 3) {
     return swings;
 
 }
+// BOS Tespiti
+function detectBOS() {
+
+    const highs = findSwingHighs();
+
+    const lows = findSwingLows();
+
+    if (highs.length === 0 || lows.length === 0)
+        return "Scanning...";
+
+    const lastClose = candles.at(-1).close;
+
+    const lastHigh = highs.at(-1).price;
+
+    const lastLow = lows.at(-1).price;
+
+    if (lastClose > lastHigh)
+        return "Bullish";
+
+    if (lastClose < lastLow)
+        return "Bearish";
+
+    return "No Break";
+
+}
