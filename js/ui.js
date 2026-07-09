@@ -3,6 +3,8 @@
 // ==========================
 
 function updateUI(result, price) {
+    // Smart Money
+document.getElementById("bos").innerText = detectBOS();
 
     // Signal
     const signal = document.getElementById("signal");
