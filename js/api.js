@@ -1,1 +1,52 @@
+// ==========================
+// HNDai API Engine
+// ==========================
 
+let candles = [];
+let currentPrice = 0;
+
+// Binance mum verisi
+async function fetchCandles(symbol, interval) {
+    try {
+        const res = await fetch(
+            `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=500`
+        );
+
+        const data = await res.json();
+
+        candles = data.map(c => ({
+            time: c[0],
+            open: Number(c[1]),
+            high: Number(c[2]),
+            low: Number(c[3]),
+            close: Number(c[4]),
+            volume: Number(c[5])
+        }));
+
+        return candles;
+
+    } catch (err) {
+        console.error("Candles Error:", err);
+        return [];
+    }
+}
+
+// Canlı fiyat
+async function fetchPrice(symbol) {
+    try {
+
+        const res = await fetch(
+            `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
+        );
+
+        const data = await res.json();
+
+        currentPrice = Number(data.price);
+
+        return currentPrice;
+
+    } catch (err) {
+        console.error("Price Error:", err);
+        return 0;
+    }
+}
