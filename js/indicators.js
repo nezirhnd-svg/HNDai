@@ -1,19 +1,27 @@
 // ==========================
-// Indicators Module
+// HNDai Indicator Engine
 // ==========================
 
-// EMA
-function EMA(prices, period) {
+// EMA Hesaplama
+function calculateEMA(period, data) {
 
-    if (prices.length < period) return 0;
+    if (data.length < period) return [];
 
     const k = 2 / (period + 1);
 
-    let ema = prices[0];
+    const ema = [];
 
-    for (let i = 1; i < prices.length; i++) {
+    let prev = data
+        .slice(0, period)
+        .reduce((a, b) => a + b, 0) / period;
 
-        ema = prices[i] * k + ema * (1 - k);
+    ema.push(prev);
+
+    for (let i = period; i < data.length; i++) {
+
+        prev = data[i] * k + prev * (1 - k);
+
+        ema.push(prev);
 
     }
 
@@ -21,17 +29,17 @@ function EMA(prices, period) {
 
 }
 
-// RSI
-function RSI(prices, period = 14) {
+// RSI Hesaplama
+function calculateRSI(period = 14) {
 
-    if (prices.length < period + 1) return 50;
+    if (candles.length < period + 1) return 50;
 
     let gains = 0;
     let losses = 0;
 
-    for (let i = prices.length - period; i < prices.length; i++) {
+    for (let i = candles.length - period; i < candles.length; i++) {
 
-        const diff = prices[i] - prices[i - 1];
+        const diff = candles[i].close - candles[i - 1].close;
 
         if (diff >= 0)
             gains += diff;
@@ -48,24 +56,19 @@ function RSI(prices, period = 14) {
 
 }
 
-// SMA
-function SMA(prices, period) {
+// EMA değerlerini döndür
+function getEMAValues() {
 
-    if (prices.length < period) return 0;
+    const closes = candles.map(c => c.close);
 
-    const slice = prices.slice(-period);
+    return {
 
-    return slice.reduce((a, b) => a + b, 0) / period;
+        ema20: calculateEMA(20, closes).at(-1),
 
-}
+        ema50: calculateEMA(50, closes).at(-1),
 
-// Volume Average
-function AverageVolume(volumes, period = 20) {
+        ema200: calculateEMA(200, closes).at(-1)
 
-    if (volumes.length < period) return 0;
-
-    const slice = volumes.slice(-period);
-
-    return slice.reduce((a, b) => a + b, 0) / period;
+    };
 
 }
