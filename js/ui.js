@@ -3,20 +3,22 @@
 // ==========================
 
 function updateUI(result, price) {
-    // Smart Money
-document.getElementById("bos").innerText = detectBOS();
 
-    // Signal
+    // ==========================
+    // AI SIGNAL
+    // ==========================
+
     const signal = document.getElementById("signal");
 
     signal.innerText = result.signal;
 
-    if (result.signal === "LONG")
+    if (result.signal === "LONG") {
         signal.style.color = "#22c55e";
-    else if (result.signal === "SHORT")
+    } else if (result.signal === "SHORT") {
         signal.style.color = "#ef4444";
-    else
+    } else {
         signal.style.color = "#facc15";
+    }
 
     // Confidence
     document.getElementById("confidence").innerText =
@@ -26,7 +28,7 @@ document.getElementById("bos").innerText = detectBOS();
     document.getElementById("entry").innerText =
         price.toFixed(2);
 
-    // Trade açıksa gerçek SL/TP göster
+    // Stop Loss / Take Profit
     if (activeTrade) {
 
         document.getElementById("sl").innerText =
@@ -42,7 +44,10 @@ document.getElementById("bos").innerText = detectBOS();
 
     }
 
-    // EMA
+    // ==========================
+    // Indicators
+    // ==========================
+
     document.getElementById("ema20").innerText =
         result.ema20 ? result.ema20.toFixed(2) : "-";
 
@@ -52,17 +57,28 @@ document.getElementById("bos").innerText = detectBOS();
     document.getElementById("ema200").innerText =
         result.ema200 ? result.ema200.toFixed(2) : "-";
 
-    // RSI
     document.getElementById("rsi").innerText =
-        result.rsi.toFixed(2);
+        result.rsi ? result.rsi.toFixed(2) : "-";
 
-    // Şimdilik MACD placeholder
-    document.getElementById("macd").innerText = "Coming Soon";
+    document.getElementById("macd").innerText =
+        "Coming Soon";
 
-    // Smart Money placeholder
-    document.getElementById("bos").innerText = "Scanning...";
-    document.getElementById("choch").innerText = "Scanning...";
-    document.getElementById("ob").innerText = "Scanning...";
-    document.getElementById("fvg").innerText = "Scanning...";
-    document.getElementById("liq").innerText = "Scanning...";
+    // ==========================
+    // Smart Money
+    // ==========================
+
+    document.getElementById("bos").innerText =
+        detectBOS();
+
+    document.getElementById("choch").innerText =
+        "Scanning...";
+
+    document.getElementById("ob").innerText =
+        "Scanning...";
+
+    document.getElementById("fvg").innerText =
+        "Scanning...";
+
+    document.getElementById("liq").innerText =
+        "Scanning...";
 }
