@@ -1,15 +1,13 @@
 // ==========================
-// Trade Engine Module
+// HNDai Trade Engine
 // ==========================
 
 let activeTrade = null;
 
+// Trade Aç
 function openTrade(signal, price) {
 
     if (activeTrade) return;
-
-    const risk = 0.01;   // %1 SL
-    const reward = 0.02; // %2 TP1
 
     activeTrade = {
 
@@ -17,70 +15,73 @@ function openTrade(signal, price) {
 
         entry: price,
 
-        sl:
+        stopLoss:
             signal === "LONG"
-                ? price * (1 - risk)
-                : price * (1 + risk),
+                ? price * 0.99
+                : price * 1.01,
 
-        tp1:
+        takeProfit:
             signal === "LONG"
-                ? price * (1 + reward)
-                : price * (1 - reward),
+                ? price * 1.02
+                : price * 0.98,
 
-        tp2:
-            signal === "LONG"
-                ? price * 1.04
-                : price * 0.96,
+        status: "OPEN",
 
-        tp3:
-            signal === "LONG"
-                ? price * 1.06
-                : price * 0.94
+        openedAt: new Date()
 
     };
 
-    console.log("Trade Açıldı", activeTrade);
-
 }
 
+// Trade Kontrol
 function checkTrade(price) {
 
     if (!activeTrade) return;
 
     if (activeTrade.side === "LONG") {
 
-        if (price >= activeTrade.tp3) {
+        // TP
+        if (price >= activeTrade.takeProfit) {
 
-            console.log("TP3");
+            activeTrade.status = "TP";
+
             activeTrade = null;
+
             return;
 
         }
 
-        if (price <= activeTrade.sl) {
+        // SL
+        if (price <= activeTrade.stopLoss) {
 
-            console.log("SL");
+            activeTrade.status = "SL";
+
             activeTrade = null;
+
             return;
 
         }
 
-    }
+    } else {
 
-    if (activeTrade.side === "SHORT") {
+        // TP
+        if (price <= activeTrade.takeProfit) {
 
-        if (price <= activeTrade.tp3) {
+            activeTrade.status = "TP";
 
-            console.log("TP3");
             activeTrade = null;
+
             return;
 
         }
 
-        if (price >= activeTrade.sl) {
+        // SL
+        if (price >= activeTrade.stopLoss) {
 
-            console.log("SL");
+            activeTrade.status = "SL";
+
             activeTrade = null;
+
             return;
 
         }
