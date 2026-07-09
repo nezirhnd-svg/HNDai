@@ -1,75 +1,40 @@
 // ==========================
-// Strategy Module
+// HNDai Strategy Engine
 // ==========================
 
 function analyzeMarket() {
 
-    const prices = getClosePrices();
-    const volumes = getVolumes();
+    const { ema20, ema50, ema200 } = getEMAValues();
 
-    if (prices.length < 200) {
-        return {
-            signal: "WAIT",
-            confidence: 0
-        };
-    }
-
-    const ema20 = EMA(prices, 20);
-    const ema50 = EMA(prices, 50);
-    const ema200 = EMA(prices, 200);
-
-    const rsi = RSI(prices);
-
-    const avgVolume = AverageVolume(volumes, 20);
-    const lastVolume = volumes[volumes.length - 1];
-
-    let score = 0;
-
-    // Trend
-    if (ema20 > ema50) score += 20;
-    if (ema50 > ema200) score += 20;
-
-    // RSI
-    if (rsi > 55 && rsi < 70) score += 20;
-
-    // Volume
-    if (lastVolume > avgVolume) score += 20;
-
-    // Price Above EMA20
-    if (prices[prices.length - 1] > ema20) score += 20;
+    const rsi = calculateRSI();
 
     let signal = "WAIT";
+    let confidence = 50;
+    let trend = "SIDEWAYS";
 
-    if (score >= 80)
+    if (ema20 > ema50 && ema50 > ema200) {
+        trend = "BULLISH";
+    } else if (ema20 < ema50 && ema50 < ema200) {
+        trend = "BEARISH";
+    }
+
+    if (trend === "BULLISH" && rsi > 55 && rsi < 75) {
         signal = "LONG";
+        confidence = 85;
+    }
 
-    if (
-        ema20 < ema50 &&
-        ema50 < ema200 &&
-        rsi < 45 &&
-        lastVolume > avgVolume &&
-        prices[prices.length - 1] < ema20
-    ) {
-
+    if (trend === "BEARISH" && rsi < 45 && rsi > 25) {
         signal = "SHORT";
-        score = 100;
-
+        confidence = 85;
     }
 
     return {
-
         signal,
-
-        confidence: score,
-
+        confidence,
+        trend,
         ema20,
-
         ema50,
-
         ema200,
-
         rsi
-
     };
-
 }
