@@ -207,3 +207,23 @@ function detectBOS() {
     return "NO BOS";
 
 }
+// ==========================
+// CHoCH Engine
+// ==========================
+
+function detectCHoCH() {
+
+    const structure = detectMarketStructure();
+    const bos = detectBOS();
+
+    if (structure.trend === "BEARISH" && bos === "BULLISH BOS") {
+        return "BULLISH CHOCH";
+    }
+
+    if (structure.trend === "BULLISH" && bos === "BEARISH BOS") {
+        return "BEARISH CHOCH";
+    }
+
+    return "NO CHOCH";
+
+}
