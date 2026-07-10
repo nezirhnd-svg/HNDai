@@ -148,3 +148,32 @@ function detectTrend() {
     };
 
 }
+// ==========================
+// BOS Engine v3
+// ==========================
+
+function detectBOS() {
+
+    const structure = detectMarketStructure();
+
+    if (
+        !structure.lastHigh ||
+        !structure.lastLow ||
+        candles.length === 0
+    ) {
+        return "NO DATA";
+    }
+
+    const lastClose = candles[candles.length - 1].close;
+
+    if (lastClose > structure.lastHigh.price) {
+        return "BULLISH BOS";
+    }
+
+    if (lastClose < structure.lastLow.price) {
+        return "BEARISH BOS";
+    }
+
+    return "NO BOS";
+
+}
