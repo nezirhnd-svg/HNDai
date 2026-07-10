@@ -56,3 +56,64 @@ function getSwings(lookback = 3) {
     };
 
 }
+// ==========================
+// Market Structure
+// ==========================
+
+function detectMarketStructure() {
+
+    const { highs, lows } = getSwings();
+
+    if (highs.length < 2 || lows.length < 2) {
+
+        return {
+
+            trend: "UNKNOWN",
+
+            HH: false,
+            HL: false,
+            LH: false,
+            LL: false
+
+        };
+
+    }
+
+    const lastHigh = highs.at(-1);
+    const prevHigh = highs.at(-2);
+
+    const lastLow = lows.at(-1);
+    const prevLow = lows.at(-2);
+
+    const HH = lastHigh.price > prevHigh.price;
+    const HL = lastLow.price > prevLow.price;
+
+    const LH = lastHigh.price < prevHigh.price;
+    const LL = lastLow.price < prevLow.price;
+
+    let trend = "RANGE";
+
+    if (HH && HL)
+        trend = "BULLISH";
+
+    else if (LH && LL)
+        trend = "BEARISH";
+
+    return {
+
+        trend,
+
+        HH,
+        HL,
+
+        LH,
+        LL,
+
+        lastHigh,
+        lastLow,
+        prevHigh,
+        prevLow
+
+    };
+
+}
