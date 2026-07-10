@@ -213,6 +213,65 @@ function detectBOS() {
 // ==========================
 
 function detectCHoCH() {
+    // ==========================
+// Order Block Engine v1
+// ==========================
+
+function detectOrderBlock() {
+
+    if (!candles || candles.length < 10) {
+        return null;
+    }
+
+    // Son güçlü yükselişten önceki son kırmızı mum
+    for (let i = candles.length - 3; i >= 3; i--) {
+
+        const current = candles[i];
+        const next = candles[i + 1];
+
+        // Bullish Order Block
+        if (
+            current.close < current.open &&
+            next.close > current.high
+        ) {
+
+            return {
+
+                type: "BULLISH",
+
+                high: current.high,
+                low: current.low,
+
+                index: i
+
+            };
+
+        }
+
+        // Bearish Order Block
+        if (
+            current.close > current.open &&
+            next.close < current.low
+        ) {
+
+            return {
+
+                type: "BEARISH",
+
+                high: current.high,
+                low: current.low,
+
+                index: i
+
+            };
+
+        }
+
+    }
+
+    return null;
+
+}
 
     const structure = detectMarketStructure();
     const bos = detectBOS();
