@@ -1,12 +1,16 @@
 // ==========================
-// HNDai Smart Money Engine v2
+// HNDai Smart Money Engine v3
 // ==========================
 
-// Swing High / Swing Low Tespiti
+// Swing Tespiti
 function getSwings(lookback = 3) {
 
     const highs = [];
     const lows = [];
+
+    if (!candles || candles.length < lookback * 2 + 1) {
+        return { highs, lows };
+    }
 
     for (let i = lookback; i < candles.length - lookback; i++) {
 
@@ -32,36 +36,26 @@ function getSwings(lookback = 3) {
         }
 
         if (swingHigh) {
-
             highs.push({
                 index: i,
                 price: candles[i].high
             });
-
         }
 
         if (swingLow) {
-
             lows.push({
                 index: i,
                 price: candles[i].low
             });
-
         }
 
     }
 
-    return {
-        highs,
-        lows
-    };
+    return { highs, lows };
 
 }
 
-// ==========================
-// Last Swings
-// ==========================
-
+// Son Swingler
 function getLastSwings() {
 
     const { highs, lows } = getSwings();
@@ -71,33 +65,27 @@ function getLastSwings() {
         highs,
         lows,
 
-        lastHigh: highs.at(-1) || null,
-        prevHigh: highs.at(-2) || null,
+        lastHigh: highs.length ? highs[highs.length - 1] : null,
+        prevHigh: highs.length > 1 ? highs[highs.length - 2] : null,
 
-        lastLow: lows.at(-1) || null,
-        prevLow: lows.at(-2) || null
+        lastLow: lows.length ? lows[lows.length - 1] : null,
+        prevLow: lows.length > 1 ? lows[lows.length - 2] : null
 
     };
 
 }
 
-// ==========================
 // Market Structure
-// ==========================
-
 function detectMarketStructure() {
 
-    const {
+    const swings = getLastSwings();
 
-        lastHigh,
-        prevHigh,
-
-        lastLow,
-        prevLow
-
-    } = getLastSwings();
-
-    if (!lastHigh || !prevHigh || !lastLow || !prevLow) {
+    if (
+        !swings.lastHigh ||
+        !swings.prevHigh ||
+        !swings.lastLow ||
+        !swings.prevLow
+    ) {
 
         return {
 
@@ -108,28 +96,23 @@ function detectMarketStructure() {
             LH: false,
             LL: false,
 
-            lastHigh,
-            prevHigh,
-            lastLow,
-            prevLow
+            ...swings
 
         };
 
     }
 
-    const HH = lastHigh.price > prevHigh.price;
-    const HL = lastLow.price > prevLow.price;
+    const HH = swings.lastHigh.price > swings.prevHigh.price;
+    const HL = swings.lastLow.price > swings.prevLow.price;
 
-    const LH = lastHigh.price < prevHigh.price;
-    const LL = lastLow.price < prevLow.price;
+    const LH = swings.lastHigh.price < swings.prevHigh.price;
+    const LL = swings.lastLow.price < swings.prevLow.price;
 
     let trend = "RANGE";
 
-    if (HH && HL)
-        trend = "BULLISH";
+    if (HH && HL) trend = "BULLISH";
 
-    else if (LH && LL)
-        trend = "BEARISH";
+    if (LH && LL) trend = "BEARISH";
 
     return {
 
@@ -141,20 +124,13 @@ function detectMarketStructure() {
         LH,
         LL,
 
-        lastHigh,
-        prevHigh,
-
-        lastLow,
-        prevLow
+        ...swings
 
     };
 
 }
 
-// ==========================
-// Trend Engine
-// ==========================
-
+// Trend
 function detectTrend() {
 
     const structure = detectMarketStructure();
