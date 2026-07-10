@@ -2,6 +2,7 @@
 // HNDai Smart Money Engine v3
 // ==========================
 
+console.log("HNDai SmartMoney v3 Loaded");
 // Swing Tespiti
 function getSwings(lookback = 3) {
 
