@@ -84,8 +84,19 @@ function updateUI(result, price) {
     document.getElementById("choch").innerText =
         detectCHoCH();
 
+    const ob = detectOrderBlock();
+
+if (ob) {
+
     document.getElementById("ob").innerText =
-        "Coming Soon";
+        `${ob.type} (${ob.low.toFixed(2)} - ${ob.high.toFixed(2)})`;
+
+} else {
+
+    document.getElementById("ob").innerText =
+        "NO OB";
+
+}
 
     document.getElementById("fvg").innerText =
         "Coming Soon";
