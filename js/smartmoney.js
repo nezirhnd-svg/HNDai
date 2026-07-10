@@ -98,3 +98,55 @@ function detectBOS() {
     return "No Break";
 
 }
+// ==========================
+// Market Structure Engine
+// ==========================
+
+function detectMarketStructure() {
+
+    const highs = findSwingHighs();
+    const lows = findSwingLows();
+
+    if (highs.length < 2 || lows.length < 2) {
+        return {
+            trend: "UNKNOWN",
+            HH: false,
+            HL: false,
+            LH: false,
+            LL: false
+        };
+    }
+
+    const lastHigh = highs.at(-1).price;
+    const prevHigh = highs.at(-2).price;
+
+    const lastLow = lows.at(-1).price;
+    const prevLow = lows.at(-2).price;
+
+    const HH = lastHigh > prevHigh;
+    const HL = lastLow > prevLow;
+
+    const LH = lastHigh < prevHigh;
+    const LL = lastLow < prevLow;
+
+    let trend = "RANGE";
+
+    if (HH && HL)
+        trend = "BULLISH";
+
+    if (LH && LL)
+        trend = "BEARISH";
+
+    return {
+
+        trend,
+
+        HH,
+        HL,
+
+        LH,
+        LL
+
+    };
+
+}
