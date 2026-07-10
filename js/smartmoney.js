@@ -337,3 +337,58 @@ function detectOrderBlock() {
     return null;
 
 }
+// ==========================
+// Fair Value Gap Engine v1
+// ==========================
+
+function detectFVG() {
+
+    if (!candles || candles.length < 3) {
+        return null;
+    }
+
+    for (let i = candles.length - 3; i >= 2; i--) {
+
+        const c1 = candles[i - 1];
+        const c2 = candles[i];
+        const c3 = candles[i + 1];
+
+        // Bullish FVG
+        if (c1.high < c3.low) {
+
+            return {
+
+                type: "BULLISH",
+
+                top: c3.low,
+
+                bottom: c1.high,
+
+                index: i
+
+            };
+
+        }
+
+        // Bearish FVG
+        if (c1.low > c3.high) {
+
+            return {
+
+                type: "BEARISH",
+
+                top: c1.low,
+
+                bottom: c3.high,
+
+                index: i
+
+            };
+
+        }
+
+    }
+
+    return null;
+
+}
