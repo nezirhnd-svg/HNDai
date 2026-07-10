@@ -138,3 +138,26 @@ function detectTrend() {
     };
 
 }
+// ==========================
+// Last Swing Engine
+// ==========================
+
+function getLastSwings() {
+
+    const highs = findSwingHighs();
+    const lows = findSwingLows();
+
+    return {
+
+        highs,
+        lows,
+
+        lastHigh: highs.at(-1) || null,
+        prevHigh: highs.at(-2) || null,
+
+        lastLow: lows.at(-1) || null,
+        prevLow: lows.at(-2) || null
+
+    };
+
+}
