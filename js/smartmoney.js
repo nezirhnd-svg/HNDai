@@ -161,3 +161,4 @@ function getLastSwings() {
     };
 
 }
+getLastSwings()
