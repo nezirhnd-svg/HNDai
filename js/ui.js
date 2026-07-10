@@ -66,21 +66,24 @@ function updateUI(result, price) {
     document.getElementById("macd").innerText =
         "Coming Soon";
 
-    // ==========================
-    // Smart Money
-    // ==========================
+   // ==========================
+// Smart Money
+// ==========================
 
-    document.getElementById("bos").innerText = "-";
+document.getElementById("bos").innerText =
+    detectBOS();
 
-    document.getElementById("choch").innerText =
-        "Scanning...";
+document.getElementById("choch").innerText =
+    detectCHoCH();
 
-    document.getElementById("ob").innerText =
-        "Scanning...";
+document.getElementById("ob").innerText =
+    "Coming Soon";
 
-    document.getElementById("fvg").innerText =
-        "Scanning...";
+document.getElementById("fvg").innerText =
+    "Coming Soon";
 
+document.getElementById("liq").innerText =
+    "Coming Soon";
     document.getElementById("liq").innerText =
         "Scanning...";
 }
