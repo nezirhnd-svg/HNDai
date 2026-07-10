@@ -1,9 +1,8 @@
 // ==========================
 // HNDai UI Engine
 // ==========================
-console.log("HNDai UI v3 - TEST"); 
 
-console.log("HNDai UI v2");
+console.log("HNDai UI v3");
 
 function updateUI(result, price) {
 
@@ -23,15 +22,24 @@ function updateUI(result, price) {
         signal.style.color = "#facc15";
     }
 
+    // ==========================
     // Confidence
+    // ==========================
+
     document.getElementById("confidence").innerText =
         result.confidence + "%";
 
+    // ==========================
     // Entry
+    // ==========================
+
     document.getElementById("entry").innerText =
         price.toFixed(2);
 
-    // Stop Loss / Take Profit
+    // ==========================
+    // Trade
+    // ==========================
+
     if (activeTrade) {
 
         document.getElementById("sl").innerText =
@@ -66,24 +74,23 @@ function updateUI(result, price) {
     document.getElementById("macd").innerText =
         "Coming Soon";
 
- 
-        "Scanning...";
+    // ==========================
+    // Smart Money
+    // ==========================
+
+    document.getElementById("bos").innerText =
+        detectBOS();
+
+    document.getElementById("choch").innerText =
+        detectCHoCH();
+
+    document.getElementById("ob").innerText =
+        "Coming Soon";
+
+    document.getElementById("fvg").innerText =
+        "Coming Soon";
+
+    document.getElementById("liq").innerText =
+        "Coming Soon";
+
 }
-// ==========================
-// Smart Money
-// ==========================
-
-document.getElementById("bos").innerText =
-    detectBOS();
-
-document.getElementById("choch").innerText =
-    detectCHoCH();
-
-document.getElementById("ob").innerText =
-    "Coming Soon";
-
-document.getElementById("fvg").innerText =
-    "Coming Soon";
-
-document.getElementById("liq").innerText =
-    "Coming Soon";
