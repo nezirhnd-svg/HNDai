@@ -117,3 +117,24 @@ function detectMarketStructure() {
     };
 
 }
+// ==========================
+// Trend Engine
+// ==========================
+
+function detectTrend() {
+
+    const structure = detectMarketStructure();
+
+    return {
+
+        trend: structure.trend,
+
+        bullish: structure.trend === "BULLISH",
+
+        bearish: structure.trend === "BEARISH",
+
+        ranging: structure.trend === "RANGE"
+
+    };
+
+}
