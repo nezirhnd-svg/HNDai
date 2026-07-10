@@ -98,8 +98,19 @@ if (ob) {
 
 }
 
+   const fvg = detectFVG();
+
+if (fvg) {
+
     document.getElementById("fvg").innerText =
-        "Coming Soon";
+        `${fvg.type} (${fvg.bottom.toFixed(2)} - ${fvg.top.toFixed(2)})`;
+
+} else {
+
+    document.getElementById("fvg").innerText =
+        "NO FVG";
+
+}
 
     document.getElementById("liq").innerText =
         "Coming Soon";
