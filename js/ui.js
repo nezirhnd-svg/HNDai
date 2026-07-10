@@ -66,7 +66,10 @@ function updateUI(result, price) {
     document.getElementById("macd").innerText =
         "Coming Soon";
 
-   // ==========================
+ 
+        "Scanning...";
+}
+// ==========================
 // Smart Money
 // ==========================
 
@@ -84,6 +87,3 @@ document.getElementById("fvg").innerText =
 
 document.getElementById("liq").innerText =
     "Coming Soon";
-    document.getElementById("liq").innerText =
-        "Scanning...";
-}
