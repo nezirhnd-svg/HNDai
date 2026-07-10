@@ -3,6 +3,7 @@
 // ==========================
 
 console.log("HNDai UI v2");
+
 function updateUI(result, price) {
 
     // ==========================
