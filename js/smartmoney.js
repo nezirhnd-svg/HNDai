@@ -287,3 +287,53 @@ function detectOrderBlock() {
     return "NO CHOCH";
 
 }
+// ==========================
+// Order Block Engine v1
+// ==========================
+
+function detectOrderBlock() {
+
+    if (!candles || candles.length < 5) {
+        return null;
+    }
+
+    for (let i = candles.length - 2; i >= 1; i--) {
+
+        const candle = candles[i];
+        const next = candles[i + 1];
+
+        // Bullish Order Block
+        if (
+            candle.close < candle.open &&
+            next.close > candle.high
+        ) {
+
+            return {
+                type: "BULLISH",
+                high: candle.high,
+                low: candle.low,
+                index: i
+            };
+
+        }
+
+        // Bearish Order Block
+        if (
+            candle.close > candle.open &&
+            next.close < candle.low
+        ) {
+
+            return {
+                type: "BEARISH",
+                high: candle.high,
+                low: candle.low,
+                index: i
+            };
+
+        }
+
+    }
+
+    return null;
+
+}
