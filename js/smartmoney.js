@@ -2,6 +2,7 @@
 // HNDai Smart Money Engine v2
 // ==========================
 
+// Swing High / Swing Low Tespiti
 function getSwings(lookback = 3) {
 
     const highs = [];
@@ -56,15 +57,47 @@ function getSwings(lookback = 3) {
     };
 
 }
+
+// ==========================
+// Last Swings
+// ==========================
+
+function getLastSwings() {
+
+    const { highs, lows } = getSwings();
+
+    return {
+
+        highs,
+        lows,
+
+        lastHigh: highs.at(-1) || null,
+        prevHigh: highs.at(-2) || null,
+
+        lastLow: lows.at(-1) || null,
+        prevLow: lows.at(-2) || null
+
+    };
+
+}
+
 // ==========================
 // Market Structure
 // ==========================
 
 function detectMarketStructure() {
 
-    const { highs, lows } = getSwings();
+    const {
 
-    if (highs.length < 2 || lows.length < 2) {
+        lastHigh,
+        prevHigh,
+
+        lastLow,
+        prevLow
+
+    } = getLastSwings();
+
+    if (!lastHigh || !prevHigh || !lastLow || !prevLow) {
 
         return {
 
@@ -73,17 +106,16 @@ function detectMarketStructure() {
             HH: false,
             HL: false,
             LH: false,
-            LL: false
+            LL: false,
+
+            lastHigh,
+            prevHigh,
+            lastLow,
+            prevLow
 
         };
 
     }
-
-    const lastHigh = highs.at(-1);
-    const prevHigh = highs.at(-2);
-
-    const lastLow = lows.at(-1);
-    const prevLow = lows.at(-2);
 
     const HH = lastHigh.price > prevHigh.price;
     const HL = lastLow.price > prevLow.price;
@@ -110,13 +142,15 @@ function detectMarketStructure() {
         LL,
 
         lastHigh,
-        lastLow,
         prevHigh,
+
+        lastLow,
         prevLow
 
     };
 
 }
+
 // ==========================
 // Trend Engine
 // ==========================
@@ -138,27 +172,3 @@ function detectTrend() {
     };
 
 }
-// ==========================
-// Last Swing Engine
-// ==========================
-
-function getLastSwings() {
-
-    const highs = findSwingHighs();
-    const lows = findSwingLows();
-
-    return {
-
-        highs,
-        lows,
-
-        lastHigh: highs.at(-1) || null,
-        prevHigh: highs.at(-2) || null,
-
-        lastLow: lows.at(-1) || null,
-        prevLow: lows.at(-2) || null
-
-    };
-
-}
-getLastSwings()
