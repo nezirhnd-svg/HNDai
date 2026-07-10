@@ -1,8 +1,8 @@
-console.log("HNDai UI v2");
 // ==========================
 // HNDai UI Engine
 // ==========================
 
+console.log("HNDai UI v2");
 function updateUI(result, price) {
 
     // ==========================
