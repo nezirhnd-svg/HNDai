@@ -67,8 +67,7 @@ function updateUI(result, price) {
     // Smart Money
     // ==========================
 
-    document.getElementById("bos").innerText =
-        detectBOS();
+    document.getElementById("bos").innerText = "-";
 
     document.getElementById("choch").innerText =
         "Scanning...";
