@@ -53,9 +53,3 @@ startEngine();
 
 // Her 5 saniyede güncelle
 setInterval(startEngine, 5000);
-
-drawOrderBlock();
-
-drawFVG();
-
-drawLiquiditySweep();
