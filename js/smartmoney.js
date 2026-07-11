@@ -247,7 +247,65 @@ function detectCHoCH() {
         detectMarketStructure();
 
     const bos =
-        detectBOS();
+      // ==========================
+// BOS Engine v2
+// ==========================
+
+function detectBOS() {
+
+    const s = getLastSwings();
+
+    if (
+        !s.lastHigh ||
+        !s.lastLow ||
+        !candles ||
+        candles.length < 2
+    ) {
+        return null;
+    }
+
+    const lastCandle = candles[candles.length - 1];
+    const prevCandle = candles[candles.length - 2];
+
+    // Bullish BOS
+    if (
+        prevCandle.close <= s.lastHigh.price &&
+        lastCandle.close > s.lastHigh.price
+    ) {
+
+        return {
+
+            type: "BULLISH",
+
+            level: s.lastHigh.price,
+
+            index: s.lastHigh.index
+
+        };
+
+    }
+
+    // Bearish BOS
+    if (
+        prevCandle.close >= s.lastLow.price &&
+        lastCandle.close < s.lastLow.price
+    ) {
+
+        return {
+
+            type: "BEARISH",
+
+            level: s.lastLow.price,
+
+            index: s.lastLow.index
+
+        };
+
+    }
+
+    return null;
+
+}
 
     if (
         structure.trend === "BEARISH" &&
