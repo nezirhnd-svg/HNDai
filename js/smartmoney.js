@@ -643,7 +643,7 @@ function detectLiquiditySweep() {
 // ==========================
 // Liquidity Sweep v2
 // ==========================
-
+}
 function detectLiquiditySweepV2(lookback = 50) {
 
     const swings = getSwings();
