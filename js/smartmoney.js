@@ -1,13 +1,11 @@
 // ==========================
-// HNDai Smart Money Engine v4
-// Part 1 / 2
+// HNDai Smart Money Engine v5
 // ==========================
-alert("SMARTMONEY LOADED");
 
-console.log("HNDai SmartMoney v4 Loaded");
+console.log("HNDai SmartMoney v5 Loaded");
 
 // ==========================
-// Swing Engine
+// Swing Detection
 // ==========================
 
 function getSwings(lookback = 3) {
@@ -15,7 +13,7 @@ function getSwings(lookback = 3) {
     const highs = [];
     const lows = [];
 
-    if (!candles || candles.length < (lookback * 2 + 1)) {
+    if (!candles || candles.length < lookback * 2 + 1) {
         return { highs, lows };
     }
 
@@ -45,8 +43,11 @@ function getSwings(lookback = 3) {
         if (swingHigh) {
 
             highs.push({
+
                 index: i,
+
                 price: candles[i].high
+
             });
 
         }
@@ -54,18 +55,18 @@ function getSwings(lookback = 3) {
         if (swingLow) {
 
             lows.push({
+
                 index: i,
+
                 price: candles[i].low
+
             });
 
         }
 
     }
 
-    return {
-        highs,
-        lows
-    };
+    return { highs, lows };
 
 }
 
@@ -80,19 +81,24 @@ function getLastSwings() {
     return {
 
         highs,
+
         lows,
 
-        lastHigh:
-            highs.length ? highs[highs.length - 1] : null,
+        lastHigh: highs.length
+            ? highs[highs.length - 1]
+            : null,
 
-        prevHigh:
-            highs.length > 1 ? highs[highs.length - 2] : null,
+        prevHigh: highs.length > 1
+            ? highs[highs.length - 2]
+            : null,
 
-        lastLow:
-            lows.length ? lows[lows.length - 1] : null,
+        lastLow: lows.length
+            ? lows[lows.length - 1]
+            : null,
 
-        prevLow:
-            lows.length > 1 ? lows[lows.length - 2] : null
+        prevLow: lows.length > 1
+            ? lows[lows.length - 2]
+            : null
 
     };
 
@@ -107,10 +113,15 @@ function detectMarketStructure() {
     const swings = getLastSwings();
 
     if (
+
         !swings.lastHigh ||
+
         !swings.prevHigh ||
+
         !swings.lastLow ||
+
         !swings.prevLow
+
     ) {
 
         return {
@@ -118,8 +129,11 @@ function detectMarketStructure() {
             trend: "UNKNOWN",
 
             HH: false,
+
             HL: false,
+
             LH: false,
+
             LL: false,
 
             ...swings
@@ -129,18 +143,22 @@ function detectMarketStructure() {
     }
 
     const HH =
+
         swings.lastHigh.price >
         swings.prevHigh.price;
 
     const HL =
+
         swings.lastLow.price >
         swings.prevLow.price;
 
     const LH =
+
         swings.lastHigh.price <
         swings.prevHigh.price;
 
     const LL =
+
         swings.lastLow.price <
         swings.prevLow.price;
 
@@ -157,8 +175,11 @@ function detectMarketStructure() {
         trend,
 
         HH,
+
         HL,
+
         LH,
+
         LL,
 
         ...swings
@@ -203,43 +224,36 @@ function detectBOS() {
         detectMarketStructure();
 
     if (
+
         !structure.lastHigh ||
+
         !structure.lastLow ||
+
         !candles ||
+
         candles.length === 0
+
     ) {
 
         return "NO DATA";
 
     }
 
-    const lastClose =
+    const close =
         candles[candles.length - 1].close;
 
-    if (
-        lastClose >
-        structure.lastHigh.price
-    ) {
-
+    if (close > structure.lastHigh.price)
         return "BULLISH BOS";
 
-    }
-
-    if (
-        lastClose <
-        structure.lastLow.price
-    ) {
-
+    if (close < structure.lastLow.price)
         return "BEARISH BOS";
-
-    }
 
     return "NO BOS";
 
 }
 
 // ==========================
-// CHoCH
+// CHOCH
 // ==========================
 
 function detectCHoCH() {
@@ -248,69 +262,14 @@ function detectCHoCH() {
         detectMarketStructure();
 
     const bos =
-      // ==========================
-// BOS Engine v2
-// ==========================
-
-function detectBOS() {
-
-    const s = getLastSwings();
+        detectBOS();
 
     if (
-        !s.lastHigh ||
-        !s.lastLow ||
-        !candles ||
-        candles.length < 2
-    ) {
-        return null;
-    }
 
-    const lastCandle = candles[candles.length - 1];
-    const prevCandle = candles[candles.length - 2];
-
-    // Bullish BOS
-    if (
-        prevCandle.close <= s.lastHigh.price &&
-        lastCandle.close > s.lastHigh.price
-    ) {
-
-        return {
-
-            type: "BULLISH",
-
-            level: s.lastHigh.price,
-
-            index: s.lastHigh.index
-
-        };
-
-    }
-
-    // Bearish BOS
-    if (
-        prevCandle.close >= s.lastLow.price &&
-        lastCandle.close < s.lastLow.price
-    ) {
-
-        return {
-
-            type: "BEARISH",
-
-            level: s.lastLow.price,
-
-            index: s.lastLow.index
-
-        };
-
-    }
-
-    return null;
-
-}
-
-    if (
         structure.trend === "BEARISH" &&
+
         bos === "BULLISH BOS"
+
     ) {
 
         return "BULLISH CHOCH";
@@ -318,8 +277,11 @@ function detectBOS() {
     }
 
     if (
+
         structure.trend === "BULLISH" &&
+
         bos === "BEARISH BOS"
+
     ) {
 
         return "BEARISH CHOCH";
@@ -331,57 +293,10 @@ function detectBOS() {
 }
 
 // ==========================
-// Order Block Engine
+// Order Block
 // ==========================
 
 function detectOrderBlock() {
-    // ==========================
-// Draw Order Block
-// ==========================
-
-let obBox = null;
-
-function drawOrderBlock(chart) {
-
-    const ob = detectOrderBlock();
-
-    if (!ob) return;
-
-    if (obBox) {
-
-        chart.removeShape(obBox);
-
-        obBox = null;
-
-    }
-
-    obBox = chart.createMultipointShape(
-        [
-            { time: candles[ob.index].time / 1000, price: ob.high },
-            { time: candles[candles.length - 1].time / 1000, price: ob.low }
-        ],
-        {
-            shape: "rectangle",
-            lock: true,
-            disableSelection: true,
-            disableSave: true,
-
-            overrides: {
-
-                backgroundColor:
-                    ob.type === "BULLISH"
-                        ? "rgba(34,197,94,0.25)"
-                        : "rgba(239,68,68,0.25)",
-
-                borderColor:
-                    ob.type === "BULLISH"
-                        ? "#22c55e"
-                        : "#ef4444"
-            }
-        }
-    );
-
-}
 
     if (!candles || candles.length < 5) {
         return null;
@@ -403,6 +318,7 @@ function drawOrderBlock(chart) {
                 type: "BULLISH",
 
                 high: candle.high,
+
                 low: candle.low,
 
                 index: i
@@ -422,6 +338,7 @@ function drawOrderBlock(chart) {
                 type: "BEARISH",
 
                 high: candle.high,
+
                 low: candle.low,
 
                 index: i
@@ -437,7 +354,7 @@ function drawOrderBlock(chart) {
 }
 
 // ==========================
-// Fair Value Gap (FVG)
+// Fair Value Gap
 // ==========================
 
 function detectFVG() {
@@ -448,18 +365,20 @@ function detectFVG() {
 
     for (let i = candles.length - 2; i >= 1; i--) {
 
-        const left = candles[i - 1];
-        const right = candles[i + 1];
+        const c1 = candles[i - 1];
+        const c2 = candles[i];
+        const c3 = candles[i + 1];
 
         // Bullish FVG
-        if (left.high < right.low) {
+        if (c1.high < c3.low) {
 
             return {
 
                 type: "BULLISH",
 
-                top: right.low,
-                bottom: left.high,
+                top: c3.low,
+
+                bottom: c1.high,
 
                 index: i
 
@@ -468,14 +387,15 @@ function detectFVG() {
         }
 
         // Bearish FVG
-        if (left.low > right.high) {
+        if (c1.low > c3.high) {
 
             return {
 
                 type: "BEARISH",
 
-                top: left.low,
-                bottom: right.high,
+                top: c1.low,
+
+                bottom: c3.high,
 
                 index: i
 
@@ -490,16 +410,16 @@ function detectFVG() {
 }
 
 // ==========================
-// Liquidity Engine
+// Liquidity
 // ==========================
 
 function detectLiquidity() {
 
-    const structure = detectMarketStructure();
+    const swings = getLastSwings();
 
     if (
-        !structure.lastHigh ||
-        !structure.lastLow
+        !swings.lastHigh ||
+        !swings.lastLow
     ) {
 
         return "NO DATA";
@@ -509,17 +429,11 @@ function detectLiquidity() {
     const price =
         candles[candles.length - 1].close;
 
-    if (price > structure.lastHigh.price) {
-
+    if (price > swings.lastHigh.price)
         return "BUY SIDE";
 
-    }
-
-    if (price < structure.lastLow.price) {
-
+    if (price < swings.lastLow.price)
         return "SELL SIDE";
-
-    }
 
     return "INSIDE RANGE";
 
@@ -529,29 +443,28 @@ function detectLiquidity() {
 // Equal High / Equal Low
 // ==========================
 
-function detectEqualHighLow() {
+function detectEqualLevels(tolerance = 0.0015) {
 
     const swings = getLastSwings();
 
     if (
-        !swings.lastHigh ||
         !swings.prevHigh ||
-        !swings.lastLow ||
-        !swings.prevLow
+        !swings.lastHigh ||
+        !swings.prevLow ||
+        !swings.lastLow
     ) {
 
         return "NONE";
 
     }
 
-    const tolerance = 0.001;
-
     if (
 
         Math.abs(
             swings.lastHigh.price -
             swings.prevHigh.price
-        ) / swings.prevHigh.price
+        ) /
+        swings.prevHigh.price
         < tolerance
 
     ) {
@@ -565,7 +478,8 @@ function detectEqualHighLow() {
         Math.abs(
             swings.lastLow.price -
             swings.prevLow.price
-        ) / swings.prevLow.price
+        ) /
+        swings.prevLow.price
         < tolerance
 
     ) {
@@ -578,196 +492,3 @@ function detectEqualHighLow() {
 
 }
 
-console.log("HNDai SmartMoney v4 Ready");
-
-// ==========================
-// Liquidity Sweep v1
-// ==========================
-
-function detectLiquiditySweep() {
-
-    const swings = getLastSwings();
-
-    if (
-        !swings.lastHigh ||
-        !swings.lastLow ||
-        candles.length < 2
-    ) {
-        return null;
-    }
-// ==========================
-// Liquidity Sweep v2
-// ==========================
-
-function detectLiquiditySweepV2(lookback = 50) {
-
-    const swings = getSwings();
-
-    if (
-        !candles ||
-        candles.length < 10 ||
-        swings.highs.length === 0 ||
-        swings.lows.length === 0
-    ) {
-        return null;
-    }
-
-    const start = Math.max(1, candles.length - lookback);
-
-    for (let i = candles.length - 1; i >= start; i--) {
-
-        const candle = candles[i];
-
-        // BUY SIDE SWEEP
-        for (const high of swings.highs) {
-
-            if (high.index >= i) continue;
-
-            if (
-                candle.high > high.price &&
-                candle.close < high.price
-            ) {
-
-                return {
-                    type: "BUY SIDE",
-                    level: high.price,
-                    index: i
-                };
-
-            }
-
-        }
-
-        // SELL SIDE SWEEP
-        for (const low of swings.lows) {
-
-            if (low.index >= i) continue;
-
-            if (
-                candle.low < low.price &&
-                candle.close > low.price
-            ) {
-
-                return {
-                    type: "SELL SIDE",
-                    level: low.price,
-                    index: i
-                };
-
-            }
-
-        }
-
-    }
-
-    return null;
-
-}
-    const candle = candles[candles.length - 1];
-
-    // Buy Side Sweep
-    if (
-        candle.high > swings.lastHigh.price &&
-        candle.close < swings.lastHigh.price
-    ) {
-
-        return {
-
-            type: "BUY SIDE",
-
-            level: swings.lastHigh.price
-
-        };
-
-    }
-
-    // Sell Side Sweep
-    if (
-        candle.low < swings.lastLow.price &&
-        candle.close > swings.lastLow.price
-    ) {
-
-        return {
-
-            type: "SELL SIDE",
-
-            level: swings.lastLow.price
-
-        };
-
-    }
-
-    return null;
-
-}
-
-
-// ==========================
-// Liquidity Sweep v1
-// ==========================
-
-// ==========================
-// Liquidity Sweep v2
-// ==========================
-
-function detectLiquiditySweepV2(lookback = 50) {
-
-    const swings = getSwings();
-
-    if (
-        !candles ||
-        candles.length < 10 ||
-        swings.highs.length === 0 ||
-        swings.lows.length === 0
-    ) {
-        return null;
-    }
-
-    const start = Math.max(1, candles.length - lookback);
-
-    for (let i = candles.length - 1; i >= start; i--) {
-
-        const candle = candles[i];
-
-        // BUY SIDE SWEEP
-        for (const high of swings.highs) {
-
-            if (high.index >= i) continue;
-
-            if (
-                candle.high > high.price &&
-                candle.close < high.price
-            ) {
-                return {
-                    type: "BUY SIDE",
-                    level: high.price,
-                    index: i
-                };
-            }
-
-        }
-
-        // SELL SIDE SWEEP
-        for (const low of swings.lows) {
-
-            if (low.index >= i) continue;
-
-            if (
-                candle.low < low.price &&
-                candle.close > low.price
-            ) {
-                return {
-                    type: "SELL SIDE",
-                    level: low.price,
-                    index: i
-                };
-            }
-
-        }
-
-    }
-
-    return null;
-}
-
-console.log("SMARTMONEY END");
