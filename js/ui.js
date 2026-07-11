@@ -112,7 +112,5 @@ if (fvg) {
 
 }
 
-    document.getElementById("liq").innerText =
-        "Coming Soon";
-
-}
+ document.getElementById("liq").innerText =
+    detectLiquidity();
