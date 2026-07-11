@@ -595,7 +595,74 @@ function detectLiquiditySweep() {
     ) {
         return null;
     }
+// ==========================
+// Liquidity Sweep v2
+// ==========================
 
+function detectLiquiditySweepV2(lookback = 50) {
+
+    const swings = getSwings();
+
+    if (
+        !candles ||
+        candles.length < 10 ||
+        swings.highs.length === 0 ||
+        swings.lows.length === 0
+    ) {
+        return null;
+    }
+
+    const start = Math.max(1, candles.length - lookback);
+
+    for (let i = candles.length - 1; i >= start; i--) {
+
+        const candle = candles[i];
+
+        // BUY SIDE SWEEP
+        for (const high of swings.highs) {
+
+            if (high.index >= i) continue;
+
+            if (
+                candle.high > high.price &&
+                candle.close < high.price
+            ) {
+
+                return {
+                    type: "BUY SIDE",
+                    level: high.price,
+                    index: i
+                };
+
+            }
+
+        }
+
+        // SELL SIDE SWEEP
+        for (const low of swings.lows) {
+
+            if (low.index >= i) continue;
+
+            if (
+                candle.low < low.price &&
+                candle.close > low.price
+            ) {
+
+                return {
+                    type: "SELL SIDE",
+                    level: low.price,
+                    index: i
+                };
+
+            }
+
+        }
+
+    }
+
+    return null;
+
+}
     const candle = candles[candles.length - 1];
 
     // Buy Side Sweep
@@ -643,49 +710,6 @@ function detectLiquiditySweep() {
 // ==========================
 // Liquidity Sweep v2
 // ==========================
-
-function detectLiquiditySweepV2(lookback = 50) {
-
-    const swings = getSwings();
-
-    if (
-        !candles ||
-        candles.length < 10 ||
-        swings.highs.length === 0 ||
-        swings.lows.length === 0
-    ) {
-        return null;
-    }
-
-    const start = Math.max(1, candles.length - lookback);
-
-    for (let i = candles.length - 1; i >= start; i--) {
-
-        const candle = candles[i];
-
-        // BUY SIDE SWEEP
-        for (const high of swings.highs) {
-
-            if (high.index >= i) continue;
-
-            if (
-                candle.high > high.price &&
-                candle.close < high.price
-            ) {
-
-                return {
-
-                    type: "BUY SIDE",
-
-                    level: high.price,
-
-                    index: i
-
-                };
-
-            }
-
-        }
 
         // SELL SIDE SWEEP
         for (const low of swings.lows) {
