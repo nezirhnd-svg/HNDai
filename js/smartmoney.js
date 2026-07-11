@@ -678,3 +678,5 @@ function detectLiquiditySweep() {
 
     return null;
 }
+
+console.log("SMARTMONEY END");
