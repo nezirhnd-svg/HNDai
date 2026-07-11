@@ -114,3 +114,6 @@ if (fvg) {
 
  document.getElementById("liq").innerText =
     detectLiquidity();
+
+
+}
