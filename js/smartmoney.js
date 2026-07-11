@@ -1,15 +1,20 @@
 // ==========================
-// HNDai Smart Money Engine v3
+// HNDai Smart Money Engine v4
+// Part 1 / 2
 // ==========================
 
-console.log("HNDai SmartMoney v3 Loaded");
-// Swing Tespiti
+console.log("HNDai SmartMoney v4 Loaded");
+
+// ==========================
+// Swing Engine
+// ==========================
+
 function getSwings(lookback = 3) {
 
     const highs = [];
     const lows = [];
 
-    if (!candles || candles.length < lookback * 2 + 1) {
+    if (!candles || candles.length < (lookback * 2 + 1)) {
         return { highs, lows };
     }
 
@@ -37,26 +42,36 @@ function getSwings(lookback = 3) {
         }
 
         if (swingHigh) {
+
             highs.push({
                 index: i,
                 price: candles[i].high
             });
+
         }
 
         if (swingLow) {
+
             lows.push({
                 index: i,
                 price: candles[i].low
             });
+
         }
 
     }
 
-    return { highs, lows };
+    return {
+        highs,
+        lows
+    };
 
 }
 
-// Son Swingler
+// ==========================
+// Last Swings
+// ==========================
+
 function getLastSwings() {
 
     const { highs, lows } = getSwings();
@@ -66,17 +81,26 @@ function getLastSwings() {
         highs,
         lows,
 
-        lastHigh: highs.length ? highs[highs.length - 1] : null,
-        prevHigh: highs.length > 1 ? highs[highs.length - 2] : null,
+        lastHigh:
+            highs.length ? highs[highs.length - 1] : null,
 
-        lastLow: lows.length ? lows[lows.length - 1] : null,
-        prevLow: lows.length > 1 ? lows[lows.length - 2] : null
+        prevHigh:
+            highs.length > 1 ? highs[highs.length - 2] : null,
+
+        lastLow:
+            lows.length ? lows[lows.length - 1] : null,
+
+        prevLow:
+            lows.length > 1 ? lows[lows.length - 2] : null
 
     };
 
 }
 
+// ==========================
 // Market Structure
+// ==========================
+
 function detectMarketStructure() {
 
     const swings = getLastSwings();
@@ -103,17 +127,29 @@ function detectMarketStructure() {
 
     }
 
-    const HH = swings.lastHigh.price > swings.prevHigh.price;
-    const HL = swings.lastLow.price > swings.prevLow.price;
+    const HH =
+        swings.lastHigh.price >
+        swings.prevHigh.price;
 
-    const LH = swings.lastHigh.price < swings.prevHigh.price;
-    const LL = swings.lastLow.price < swings.prevLow.price;
+    const HL =
+        swings.lastLow.price >
+        swings.prevLow.price;
+
+    const LH =
+        swings.lastHigh.price <
+        swings.prevHigh.price;
+
+    const LL =
+        swings.lastLow.price <
+        swings.prevLow.price;
 
     let trend = "RANGE";
 
-    if (HH && HL) trend = "BULLISH";
+    if (HH && HL)
+        trend = "BULLISH";
 
-    if (LH && LL) trend = "BEARISH";
+    if (LH && LL)
+        trend = "BEARISH";
 
     return {
 
@@ -121,7 +157,6 @@ function detectMarketStructure() {
 
         HH,
         HL,
-
         LH,
         LL,
 
@@ -131,60 +166,40 @@ function detectMarketStructure() {
 
 }
 
+// ==========================
 // Trend
+// ==========================
+
 function detectTrend() {
 
-    const structure = detectMarketStructure();
+    const structure =
+        detectMarketStructure();
 
     return {
 
         trend: structure.trend,
 
-        bullish: structure.trend === "BULLISH",
+        bullish:
+            structure.trend === "BULLISH",
 
-        bearish: structure.trend === "BEARISH",
+        bearish:
+            structure.trend === "BEARISH",
 
-        ranging: structure.trend === "RANGE"
+        ranging:
+            structure.trend === "RANGE"
 
     };
 
 }
+
 // ==========================
-// BOS Engine v3
-// ==========================
-
-function detectBOS() {
-
-    const structure = detectMarketStructure();
-
-    if (
-        !structure.lastHigh ||
-        !structure.lastLow ||
-        candles.length === 0
-    ) {
-        return "NO DATA";
-    }
-
-    const lastClose = candles[candles.length - 1].close;
-
-    if (lastClose > structure.lastHigh.price) {
-        return "BULLISH BOS";
-    }
-
-    if (lastClose < structure.lastLow.price) {
-        return "BEARISH BOS";
-    }
-
-    return "NO BOS";
-
-}
-// ==========================
-// BOS Engine v3
+// BOS
 // ==========================
 
 function detectBOS() {
 
-    const structure = detectMarketStructure();
+    const structure =
+        detectMarketStructure();
 
     if (
         !structure.lastHigh ||
@@ -192,103 +207,72 @@ function detectBOS() {
         !candles ||
         candles.length === 0
     ) {
+
         return "NO DATA";
+
     }
 
-    const lastClose = candles[candles.length - 1].close;
+    const lastClose =
+        candles[candles.length - 1].close;
 
-    if (lastClose > structure.lastHigh.price) {
+    if (
+        lastClose >
+        structure.lastHigh.price
+    ) {
+
         return "BULLISH BOS";
+
     }
 
-    if (lastClose < structure.lastLow.price) {
+    if (
+        lastClose <
+        structure.lastLow.price
+    ) {
+
         return "BEARISH BOS";
+
     }
 
     return "NO BOS";
 
 }
+
 // ==========================
-// CHoCH Engine
+// CHoCH
 // ==========================
 
 function detectCHoCH() {
-    // ==========================
-// Order Block Engine v1
-// ==========================
 
-function detectOrderBlock() {
+    const structure =
+        detectMarketStructure();
 
-    if (!candles || candles.length < 10) {
-        return null;
-    }
+    const bos =
+        detectBOS();
 
-    // Son güçlü yükselişten önceki son kırmızı mum
-    for (let i = candles.length - 3; i >= 3; i--) {
+    if (
+        structure.trend === "BEARISH" &&
+        bos === "BULLISH BOS"
+    ) {
 
-        const current = candles[i];
-        const next = candles[i + 1];
-
-        // Bullish Order Block
-        if (
-            current.close < current.open &&
-            next.close > current.high
-        ) {
-
-            return {
-
-                type: "BULLISH",
-
-                high: current.high,
-                low: current.low,
-
-                index: i
-
-            };
-
-        }
-
-        // Bearish Order Block
-        if (
-            current.close > current.open &&
-            next.close < current.low
-        ) {
-
-            return {
-
-                type: "BEARISH",
-
-                high: current.high,
-                low: current.low,
-
-                index: i
-
-            };
-
-        }
-
-    }
-
-    return null;
-
-}
-
-    const structure = detectMarketStructure();
-    const bos = detectBOS();
-
-    if (structure.trend === "BEARISH" && bos === "BULLISH BOS") {
         return "BULLISH CHOCH";
+
     }
 
-    if (structure.trend === "BULLISH" && bos === "BEARISH BOS") {
+    if (
+        structure.trend === "BULLISH" &&
+        bos === "BEARISH BOS"
+    ) {
+
         return "BEARISH CHOCH";
+
     }
 
     return "NO CHOCH";
 
 }
+
 // ==========================
-// Order Block Engine v1
+// Order Block Engine
 // ==========================
 
 function detectOrderBlock() {
@@ -309,10 +293,14 @@ function detectOrderBlock() {
         ) {
 
             return {
+
                 type: "BULLISH",
+
                 high: candle.high,
                 low: candle.low,
+
                 index: i
+
             };
 
         }
@@ -324,10 +312,14 @@ function detectOrderBlock() {
         ) {
 
             return {
+
                 type: "BEARISH",
+
                 high: candle.high,
                 low: candle.low,
+
                 index: i
+
             };
 
         }
@@ -337,8 +329,9 @@ function detectOrderBlock() {
     return null;
 
 }
+
 // ==========================
-// Fair Value Gap Engine v1
+// Fair Value Gap (FVG)
 // ==========================
 
 function detectFVG() {
@@ -347,22 +340,20 @@ function detectFVG() {
         return null;
     }
 
-    for (let i = candles.length - 3; i >= 2; i--) {
+    for (let i = candles.length - 2; i >= 1; i--) {
 
-        const c1 = candles[i - 1];
-        const c2 = candles[i];
-        const c3 = candles[i + 1];
+        const left = candles[i - 1];
+        const right = candles[i + 1];
 
         // Bullish FVG
-        if (c1.high < c3.low) {
+        if (left.high < right.low) {
 
             return {
 
                 type: "BULLISH",
 
-                top: c3.low,
-
-                bottom: c1.high,
+                top: right.low,
+                bottom: left.high,
 
                 index: i
 
@@ -371,15 +362,14 @@ function detectFVG() {
         }
 
         // Bearish FVG
-        if (c1.low > c3.high) {
+        if (left.low > right.high) {
 
             return {
 
                 type: "BEARISH",
 
-                top: c1.low,
-
-                bottom: c3.high,
+                top: left.low,
+                bottom: right.high,
 
                 index: i
 
@@ -392,3 +382,94 @@ function detectFVG() {
     return null;
 
 }
+
+// ==========================
+// Liquidity Engine
+// ==========================
+
+function detectLiquidity() {
+
+    const structure = detectMarketStructure();
+
+    if (
+        !structure.lastHigh ||
+        !structure.lastLow
+    ) {
+
+        return "NO DATA";
+
+    }
+
+    const price =
+        candles[candles.length - 1].close;
+
+    if (price > structure.lastHigh.price) {
+
+        return "BUY SIDE";
+
+    }
+
+    if (price < structure.lastLow.price) {
+
+        return "SELL SIDE";
+
+    }
+
+    return "INSIDE RANGE";
+
+}
+
+// ==========================
+// Equal High / Equal Low
+// ==========================
+
+function detectEqualHighLow() {
+
+    const swings = getLastSwings();
+
+    if (
+        !swings.lastHigh ||
+        !swings.prevHigh ||
+        !swings.lastLow ||
+        !swings.prevLow
+    ) {
+
+        return "NONE";
+
+    }
+
+    const tolerance = 0.001;
+
+    if (
+
+        Math.abs(
+            swings.lastHigh.price -
+            swings.prevHigh.price
+        ) / swings.prevHigh.price
+        < tolerance
+
+    ) {
+
+        return "EQUAL HIGH";
+
+    }
+
+    if (
+
+        Math.abs(
+            swings.lastLow.price -
+            swings.prevLow.price
+        ) / swings.prevLow.price
+        < tolerance
+
+    ) {
+
+        return "EQUAL LOW";
+
+    }
+
+    return "NONE";
+
+}
+
+console.log("HNDai SmartMoney v4 Ready");
