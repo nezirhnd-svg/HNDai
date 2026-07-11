@@ -46,6 +46,8 @@ async function startEngine() {
 
 }
 
+drawOrderBlock(chart);
+
 // İlk çalıştır
 startEngine();
 
