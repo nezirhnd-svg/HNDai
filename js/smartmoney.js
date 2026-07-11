@@ -492,3 +492,116 @@ function detectEqualLevels(tolerance = 0.0015) {
 
 }
 
+// ==========================
+// Liquidity Sweep v2
+// ==========================
+
+function detectLiquiditySweep() {
+
+    const swings = getSwings();
+
+    if (
+        !candles ||
+        candles.length < 10 ||
+        swings.highs.length === 0 ||
+        swings.lows.length === 0
+    ) {
+        return null;
+    }
+
+    const candle = candles[candles.length - 1];
+
+    // BUY SIDE
+    for (const high of swings.highs) {
+
+        if (
+            candle.high > high.price &&
+            candle.close < high.price
+        ) {
+
+            return {
+
+                type: "BUY SIDE",
+
+                level: high.price,
+
+                index: high.index
+
+            };
+
+        }
+
+    }
+
+    // SELL SIDE
+    for (const low of swings.lows) {
+
+        if (
+
+            candle.low < low.price &&
+
+            candle.close > low.price
+
+        ) {
+
+            return {
+
+                type: "SELL SIDE",
+
+                level: low.price,
+
+                index: low.index
+
+            };
+
+        }
+
+    }
+
+    return null;
+
+}
+
+// ==========================
+// Draw Order Block
+// ==========================
+
+function drawOrderBlock() {
+
+    const ob = detectOrderBlock();
+
+    if (!ob) return;
+
+    console.log("Order Block :", ob);
+
+}
+
+// ==========================
+// Draw FVG
+// ==========================
+
+function drawFVG() {
+
+    const fvg = detectFVG();
+
+    if (!fvg) return;
+
+    console.log("FVG :", fvg);
+
+}
+
+// ==========================
+// Draw Liquidity Sweep
+// ==========================
+
+function drawLiquiditySweep() {
+
+    const sweep = detectLiquiditySweep();
+
+    if (!sweep) return;
+
+    console.log("Liquidity Sweep :", sweep);
+
+}
+
+console.log("HNDai SmartMoney v5 Ready");
