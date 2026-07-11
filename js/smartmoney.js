@@ -276,6 +276,53 @@ function detectCHoCH() {
 // ==========================
 
 function detectOrderBlock() {
+    // ==========================
+// Draw Order Block
+// ==========================
+
+let obBox = null;
+
+function drawOrderBlock(chart) {
+
+    const ob = detectOrderBlock();
+
+    if (!ob) return;
+
+    if (obBox) {
+
+        chart.removeShape(obBox);
+
+        obBox = null;
+
+    }
+
+    obBox = chart.createMultipointShape(
+        [
+            { time: candles[ob.index].time / 1000, price: ob.high },
+            { time: candles[candles.length - 1].time / 1000, price: ob.low }
+        ],
+        {
+            shape: "rectangle",
+            lock: true,
+            disableSelection: true,
+            disableSave: true,
+
+            overrides: {
+
+                backgroundColor:
+                    ob.type === "BULLISH"
+                        ? "rgba(34,197,94,0.25)"
+                        : "rgba(239,68,68,0.25)",
+
+                borderColor:
+                    ob.type === "BULLISH"
+                        ? "#22c55e"
+                        : "#ef4444"
+            }
+        }
+    );
+
+}
 
     if (!candles || candles.length < 5) {
         return null;
