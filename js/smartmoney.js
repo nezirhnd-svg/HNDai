@@ -2,6 +2,7 @@
 // HNDai Smart Money Engine v4
 // Part 1 / 2
 // ==========================
+alert("SMARTMONEY LOADED");
 
 console.log("HNDai SmartMoney v4 Loaded");
 
