@@ -640,8 +640,6 @@ function detectLiquiditySweep() {
 // ==========================
 
 function detectLiquiditySweep() {
-
-}
 // ==========================
 // Liquidity Sweep v2
 // ==========================
