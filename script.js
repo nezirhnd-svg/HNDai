@@ -46,6 +46,12 @@ async function startEngine() {
 
 }
 
+drawOrderBlock();
+
+drawFVG();
+
+drawLiquiditySweep();
+
 drawOrderBlock(chart);
 
 // İlk çalıştır
