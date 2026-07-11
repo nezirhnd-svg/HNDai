@@ -578,3 +578,57 @@ function detectEqualHighLow() {
 }
 
 console.log("HNDai SmartMoney v4 Ready");
+
+// ==========================
+// Liquidity Sweep v1
+// ==========================
+
+function detectLiquiditySweep() {
+
+    const swings = getLastSwings();
+
+    if (
+        !swings.lastHigh ||
+        !swings.lastLow ||
+        candles.length < 2
+    ) {
+        return null;
+    }
+
+    const candle = candles[candles.length - 1];
+
+    // Buy Side Sweep
+    if (
+        candle.high > swings.lastHigh.price &&
+        candle.close < swings.lastHigh.price
+    ) {
+
+        return {
+
+            type: "BUY SIDE",
+
+            level: swings.lastHigh.price
+
+        };
+
+    }
+
+    // Sell Side Sweep
+    if (
+        candle.low < swings.lastLow.price &&
+        candle.close > swings.lastLow.price
+    ) {
+
+        return {
+
+            type: "SELL SIDE",
+
+            level: swings.lastLow.price
+
+        };
+
+    }
+
+    return null;
+
+}
