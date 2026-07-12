@@ -54,7 +54,25 @@ function updateUI(result, price) {
         document.getElementById("tp").innerText = "-";
 
     }
+const confidence = document.getElementById("confidence");
+if (confidence) {
+    confidence.innerText = result.confidence + "%";
+}
 
+const trend = document.getElementById("trend");
+if (trend) {
+    trend.innerText = result.trend;
+}
+
+const bullScore = document.getElementById("bullScore");
+if (bullScore) {
+    bullScore.innerText = result.bullScore ?? "-";
+}
+
+const bearScore = document.getElementById("bearScore");
+if (bearScore) {
+    bearScore.innerText = result.bearScore ?? "-";
+}
     // ==========================
     // Indicators
     // ==========================
