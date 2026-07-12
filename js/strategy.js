@@ -128,38 +128,6 @@ function getSMCScore() {
 
 }
 
-    const bos = detectBOS();
-    const choch = detectCHoCH();
-
-    let direction = "NEUTRAL";
-    let score = 0;
-
-    if (bos === "BULLISH BOS") {
-        direction = "BULLISH";
-        score += 15;
-    }
-
-    if (bos === "BEARISH BOS") {
-        direction = "BEARISH";
-        score += 15;
-    }
-
-    if (choch === "BULLISH CHOCH") {
-        direction = "BULLISH";
-        score += 10;
-    }
-
-    if (choch === "BEARISH CHOCH") {
-        direction = "BEARISH";
-        score += 10;
-    }
-
-    return {
-        direction,
-        score
-    };
-
-}
 
 function analyzeMarket() {
 
