@@ -1,7 +1,38 @@
 // ==========================
 // HNDai Strategy Engine
 // ==========================
+// ==========================
+// Trend Score
+// ==========================
 
+function getTrendScore() {
+
+    const { ema20, ema50, ema200 } = getEMAValues();
+
+    if (ema20 > ema50 && ema50 > ema200) {
+
+        return {
+            direction: "BULLISH",
+            score: 20
+        };
+
+    }
+
+    if (ema20 < ema50 && ema50 < ema200) {
+
+        return {
+            direction: "BEARISH",
+            score: 20
+        };
+
+    }
+
+    return {
+        direction: "SIDEWAYS",
+        score: 0
+    };
+
+}
 function analyzeMarket() {
 
     const { ema20, ema50, ema200 } = getEMAValues();
