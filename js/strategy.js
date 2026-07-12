@@ -107,3 +107,4 @@ function analyzeMarket() {
         rsi
     };
 }
+console.log("STRUCTURE SCORE LOADED");
