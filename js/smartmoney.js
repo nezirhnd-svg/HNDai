@@ -239,19 +239,25 @@ function detectBOS() {
 
     }
 
-    const close =
-        candles[candles.length - 1].close;
+const lastClose = candles[candles.length - 1].close;
+const prevClose = candles[candles.length - 2].close;
 
-    if (close > structure.lastHigh.price)
-        return "BULLISH BOS";
-
-    if (close < structure.lastLow.price)
-        return "BEARISH BOS";
-
-    return "NO BOS";
-
+if (
+    lastClose > structure.lastHigh.price &&
+    prevClose > structure.lastHigh.price
+) {
+    return "BULLISH BOS";
 }
 
+if (
+    lastClose < structure.lastLow.price &&
+    prevClose < structure.lastLow.price
+) {
+    return "BEARISH BOS";
+}
+
+return "NO BOS";
+    
 // ==========================
 // CHOCH
 // ==========================
