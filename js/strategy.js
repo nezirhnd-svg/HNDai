@@ -4,6 +4,7 @@
 // ==========================
 // Trend Score
 // ==========================
+console.log("STRATEGY V2 LOADED");
 
 function getTrendScore() {
 
