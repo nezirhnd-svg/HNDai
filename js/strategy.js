@@ -131,38 +131,36 @@ function getSMCScore() {
 
 function analyzeMarket() {
 
-    const { ema20, ema50, ema200 } = getEMAValues();
+    const trend = getTrendScore();
+    const structure = getStructureScore();
+    const smc = getSMCScore();
 
-    const rsi = calculateRSI();
+    let bullScore = 0;
+    let bearScore = 0;
+
+    if (trend.direction === "BULLISH") bullScore += trend.score;
+    if (trend.direction === "BEARISH") bearScore += trend.score;
+
+    if (structure.direction === "BULLISH") bullScore += structure.score;
+    if (structure.direction === "BEARISH") bearScore += structure.score;
+
+    if (smc.direction === "BULLISH") bullScore += smc.score;
+    if (smc.direction === "BEARISH") bearScore += smc.score;
 
     let signal = "WAIT";
-    let confidence = 50;
-    let trend = "SIDEWAYS";
+    let confidence = Math.max(bullScore, bearScore);
 
-    if (ema20 > ema50 && ema50 > ema200) {
-        trend = "BULLISH";
-    } else if (ema20 < ema50 && ema50 < ema200) {
-        trend = "BEARISH";
-    }
-
-    if (trend === "BULLISH" && rsi > 55 && rsi < 75) {
-        signal = "LONG";
-        confidence = 85;
-    }
-
-    if (trend === "BEARISH" && rsi < 45 && rsi > 25) {
-        signal = "SHORT";
-        confidence = 85;
-    }
+    if (bullScore >= 40) signal = "LONG";
+    if (bearScore >= 40) signal = "SHORT";
 
     return {
         signal,
         confidence,
-        trend,
-        ema20,
-        ema50,
-        ema200,
-        rsi
+        trend: trend.direction,
+        bullScore,
+        bearScore
     };
+
 }
+
 console.log("STRUCTURE SCORE LOADED");
