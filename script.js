@@ -52,7 +52,6 @@ drawFVG();
 
 drawLiquiditySweep();
 
-drawOrderBlock(chart);
 
 // İlk çalıştır
 startEngine();
