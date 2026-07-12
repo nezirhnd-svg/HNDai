@@ -78,10 +78,10 @@ function updateUI(result, price) {
     // Smart Money
     // ==========================
 
-   const bos = detectBOS();
+  const bos = detectBOS();
 
 document.getElementById("bos").innerText =
-    bos ? `${bos.type} BOS` : "NO BOS";
+    bos || "NO BOS";
     document.getElementById("choch").innerText =
         detectCHoCH();
 
