@@ -151,7 +151,7 @@ function analyzeMarket() {
     let confidence = Math.max(bullScore, bearScore);
 
     if (bullScore >= 40) signal = "LONG";
-    if (bearScore >= 40) signal = "SHORT";
+    else if (bearScore >= 40) signal = "SHORT";
 
     return {
         signal,
@@ -160,7 +160,4 @@ function analyzeMarket() {
         bullScore,
         bearScore
     };
-
 }
-
-console.log("STRUCTURE SCORE LOADED");
