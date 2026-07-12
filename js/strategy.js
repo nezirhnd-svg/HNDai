@@ -44,6 +44,57 @@ function getTrendScore() {
 // ==========================
 
 function getStructureScore() {
+    // ==========================
+// Smart Money Score
+// ==========================
+
+function getSMCScore() {
+
+    const ob = detectOrderBlock();
+    const fvg = detectFVG();
+    const sweep = detectLiquiditySweep();
+
+    let bull = 0;
+    let bear = 0;
+
+    // Order Block
+    if (ob) {
+        if (ob.type === "BULLISH") bull += 10;
+        if (ob.type === "BEARISH") bear += 10;
+    }
+
+    // Fair Value Gap
+    if (fvg) {
+        if (fvg.type === "BULLISH") bull += 10;
+        if (fvg.type === "BEARISH") bear += 10;
+    }
+
+    // Liquidity Sweep
+    if (sweep) {
+        if (sweep.type === "SELL SIDE") bull += 10;
+        if (sweep.type === "BUY SIDE") bear += 10;
+    }
+
+    if (bull > bear) {
+        return {
+            direction: "BULLISH",
+            score: bull
+        };
+    }
+
+    if (bear > bull) {
+        return {
+            direction: "BEARISH",
+            score: bear
+        };
+    }
+
+    return {
+        direction: "NEUTRAL",
+        score: 0
+    };
+
+}
 
     const bos = detectBOS();
     const choch = detectCHoCH();
