@@ -148,10 +148,39 @@ function analyzeMarket() {
     if (smc.direction === "BEARISH") bearScore += smc.score;
 
     let signal = "WAIT";
-    let confidence = Math.max(bullScore, bearScore);
+let confidence = Math.max(bullScore, bearScore);
 
-    if (bullScore >= 40) signal = "LONG";
-    else if (bearScore >= 40) signal = "SHORT";
+// LONG
+if (
+    trend.direction === "BULLISH" &&
+    bullScore >= 40
+) {
+    signal = "LONG";
+}
+
+// SHORT
+else if (
+    trend.direction === "BEARISH" &&
+    bearScore >= 40
+) {
+    signal = "SHORT";
+}
+
+// Counter Trend SHORT
+else if (
+    trend.direction === "BULLISH" &&
+    bearScore >= 60
+) {
+    signal = "SHORT";
+}
+
+// Counter Trend LONG
+else if (
+    trend.direction === "BEARISH" &&
+    bullScore >= 60
+) {
+    signal = "LONG";
+}
 
     return {
         signal,
