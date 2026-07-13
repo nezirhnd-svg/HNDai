@@ -571,7 +571,6 @@ function detectLiquiditySweep() {
 // ==========================
 // Draw Order Block
 // ==========================
-console.log("BURAYA GELDİ");
     
 function drawOrderBlock() {
 
