@@ -611,3 +611,4 @@ function drawLiquiditySweep() {
 }
 
 console.log("HNDai SmartMoney v5 Ready");
+}
