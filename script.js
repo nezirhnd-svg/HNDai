@@ -83,13 +83,6 @@ async function startEngine() {
 
 }
 
-drawOrderBlock();
-
-drawFVG();
-
-drawLiquiditySweep();
-
-
 // İlk çalıştır
 startEngine();
 
