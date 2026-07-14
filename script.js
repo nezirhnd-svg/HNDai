@@ -28,6 +28,11 @@ async function startEngine() {
     // Canlı fiyat
     const price = await fetchPrice(currentCoin);
 
+    if (!Number.isFinite(price) || price <= 0) {
+        console.error("Engine stopped: invalid price", price);
+        return;
+    }
+
     // Analiz yap
     const result = analyzeMarket();
 
