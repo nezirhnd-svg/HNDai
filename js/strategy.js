@@ -6,6 +6,8 @@
 // ==========================
 console.log("STRATEGY V2 LOADED");
 
+const MAX_MARKET_SCORE = 75;
+
 // ==========================
 // Trend Score
 // ==========================
@@ -150,7 +152,11 @@ function analyzeMarket() {
     if (smc.direction === "BEARISH") bearScore += smc.score;
 
     let signal = "WAIT";
-let confidence = Math.max(bullScore, bearScore);
+const rawConfidence = Math.max(bullScore, bearScore);
+const confidence = Math.min(
+    100,
+    Math.max(0, Math.round((rawConfidence / MAX_MARKET_SCORE) * 100))
+);
 
 // LONG
 if (
@@ -187,6 +193,7 @@ else if (
     return {
         signal,
         confidence,
+        rawConfidence,
         trend: trend.direction,
         bullScore,
         bearScore,
