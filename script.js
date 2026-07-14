@@ -7,18 +7,34 @@ let currentInterval = "15m";
 let engineRunning = false;
 
 // TradingView
-new TradingView.widget({
-    autosize: true,
-    symbol: "BINANCE:" + currentCoin,
-    interval: "15",
-    timezone: "Etc/UTC",
-    theme: "dark",
-    style: "1",
-    locale: "tr",
-    container_id: "tvchart",
-    hide_side_toolbar: false,
-    allow_symbol_change: true
-});
+function initTradingView() {
+    if (
+        !window.TradingView ||
+        typeof window.TradingView.widget !== "function"
+    ) {
+        console.warn("TradingView is unavailable; the data engine will continue without the chart.");
+        return;
+    }
+
+    try {
+        new window.TradingView.widget({
+            autosize: true,
+            symbol: "BINANCE:" + currentCoin,
+            interval: "15",
+            timezone: "Etc/UTC",
+            theme: "dark",
+            style: "1",
+            locale: "tr",
+            container_id: "tvchart",
+            hide_side_toolbar: false,
+            allow_symbol_change: true
+        });
+    } catch (err) {
+        console.warn("TradingView chart could not be initialized; the data engine will continue.", err);
+    }
+}
+
+initTradingView();
 
 // Ana Motor
 async function startEngine() {
