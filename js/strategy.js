@@ -15,28 +15,45 @@ const MAX_MARKET_SCORE = 75;
 function getTrendScore(emaValues = getEMAValues()) {
 
     const { ema20, ema50, ema200 } = emaValues;
+    const evidence = {
+        bullish: [],
+        bearish: []
+    };
 
     if (ema20 > ema50 && ema50 > ema200) {
 
+        evidence.bullish.push("EMA20 > EMA50 > EMA200");
+
         return {
             direction: "BULLISH",
-            score: 20
+            score: 20,
+            bullScore: 20,
+            bearScore: 0,
+            evidence
         };
 
     }
 
     if (ema20 < ema50 && ema50 < ema200) {
 
+        evidence.bearish.push("EMA20 < EMA50 < EMA200");
+
         return {
             direction: "BEARISH",
-            score: 20
+            score: 20,
+            bullScore: 0,
+            bearScore: 20,
+            evidence
         };
 
     }
 
     return {
         direction: "SIDEWAYS",
-        score: 0
+        score: 0,
+        bullScore: 0,
+        bearScore: 0,
+        evidence
     };
 
 }
@@ -49,32 +66,49 @@ function getStructureScore() {
     const bos = detectBOS();
     const choch = detectCHoCH();
 
-    let direction = "NEUTRAL";
-    let score = 0;
+    let bullScore = 0;
+    let bearScore = 0;
+    const evidence = {
+        bullish: [],
+        bearish: []
+    };
 
     if (bos === "BULLISH BOS") {
-        direction = "BULLISH";
-        score += 15;
+        bullScore += 15;
+        evidence.bullish.push(bos);
     }
 
     if (bos === "BEARISH BOS") {
-        direction = "BEARISH";
-        score += 15;
+        bearScore += 15;
+        evidence.bearish.push(bos);
     }
 
     if (choch === "BULLISH CHOCH") {
-        direction = "BULLISH";
-        score += 10;
+        bullScore += 10;
+        evidence.bullish.push(choch);
     }
 
     if (choch === "BEARISH CHOCH") {
-        direction = "BEARISH";
-        score += 10;
+        bearScore += 10;
+        evidence.bearish.push(choch);
     }
+
+    const direction = bullScore > bearScore
+        ? "BULLISH"
+        : bearScore > bullScore
+            ? "BEARISH"
+            : "NEUTRAL";
+
+    const score = Math.max(bullScore, bearScore);
 
     return {
         direction,
-        score
+        score,
+        bullScore,
+        bearScore,
+        evidence,
+        bos,
+        choch
     };
 }
 
@@ -84,48 +118,70 @@ function getStructureScore() {
 
 function getSMCScore() {
 
-    const ob = detectOrderBlock();
+    const orderBlock = detectOrderBlock();
     const fvg = detectFVG();
-    const sweep = detectLiquiditySweep();
+    const liquiditySweep = detectLiquiditySweep();
 
-    let bull = 0;
-    let bear = 0;
+    let bullScore = 0;
+    let bearScore = 0;
+    const evidence = {
+        bullish: [],
+        bearish: []
+    };
 
     // Order Block
-    if (ob) {
-        if (ob.type === "BULLISH") bull += 10;
-        if (ob.type === "BEARISH") bear += 10;
+    if (orderBlock) {
+        if (orderBlock.type === "BULLISH") {
+            bullScore += 10;
+            evidence.bullish.push("BULLISH ORDER BLOCK");
+        }
+        if (orderBlock.type === "BEARISH") {
+            bearScore += 10;
+            evidence.bearish.push("BEARISH ORDER BLOCK");
+        }
     }
 
     // Fair Value Gap
     if (fvg) {
-        if (fvg.type === "BULLISH") bull += 10;
-        if (fvg.type === "BEARISH") bear += 10;
+        if (fvg.type === "BULLISH") {
+            bullScore += 10;
+            evidence.bullish.push("BULLISH FVG");
+        }
+        if (fvg.type === "BEARISH") {
+            bearScore += 10;
+            evidence.bearish.push("BEARISH FVG");
+        }
     }
 
     // Liquidity Sweep
-    if (sweep) {
-        if (sweep.type === "SELL SIDE") bull += 10;
-        if (sweep.type === "BUY SIDE") bear += 10;
+    if (liquiditySweep) {
+        if (liquiditySweep.type === "SELL SIDE") {
+            bullScore += 10;
+            evidence.bullish.push("SELL SIDE LIQUIDITY SWEEP");
+        }
+        if (liquiditySweep.type === "BUY SIDE") {
+            bearScore += 10;
+            evidence.bearish.push("BUY SIDE LIQUIDITY SWEEP");
+        }
     }
 
-    if (bull > bear) {
-        return {
-            direction: "BULLISH",
-            score: bull
-        };
-    }
+    const direction = bullScore > bearScore
+        ? "BULLISH"
+        : bearScore > bullScore
+            ? "BEARISH"
+            : "NEUTRAL";
 
-    if (bear > bull) {
-        return {
-            direction: "BEARISH",
-            score: bear
-        };
-    }
+    const score = Math.max(bullScore, bearScore);
 
     return {
-        direction: "NEUTRAL",
-        score: 0
+        direction,
+        score,
+        bullScore,
+        bearScore,
+        evidence,
+        orderBlock,
+        fvg,
+        liquiditySweep
     };
 
 }
@@ -139,17 +195,27 @@ function analyzeMarket() {
     const structure = getStructureScore();
     const smc = getSMCScore();
 
-    let bullScore = 0;
-    let bearScore = 0;
+    const bullScore = trend.bullScore + structure.bullScore + smc.bullScore;
+    const bearScore = trend.bearScore + structure.bearScore + smc.bearScore;
+    const scoreDifference = Math.abs(bullScore - bearScore);
+    const marketBias = bullScore > bearScore
+        ? "BULLISH"
+        : bearScore > bullScore
+            ? "BEARISH"
+            : "NEUTRAL";
 
-    if (trend.direction === "BULLISH") bullScore += trend.score;
-    if (trend.direction === "BEARISH") bearScore += trend.score;
-
-    if (structure.direction === "BULLISH") bullScore += structure.score;
-    if (structure.direction === "BEARISH") bearScore += structure.score;
-
-    if (smc.direction === "BULLISH") bullScore += smc.score;
-    if (smc.direction === "BEARISH") bearScore += smc.score;
+    const evidence = {
+        bullish: [
+            ...trend.evidence.bullish,
+            ...structure.evidence.bullish,
+            ...smc.evidence.bullish
+        ],
+        bearish: [
+            ...trend.evidence.bearish,
+            ...structure.evidence.bearish,
+            ...smc.evidence.bearish
+        ]
+    };
 
     let signal = "WAIT";
 const rawConfidence = Math.max(bullScore, bearScore);
@@ -197,6 +263,14 @@ else if (
         trend: trend.direction,
         bullScore,
         bearScore,
+        scoreDifference,
+        marketBias,
+        breakdown: {
+            trend,
+            structure,
+            smc
+        },
+        evidence,
         ema20,
         ema50,
         ema200,
