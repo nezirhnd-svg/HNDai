@@ -4,6 +4,7 @@
 
 let currentCoin = "BTCUSDT";
 let currentInterval = "15m";
+let engineRunning = false;
 
 // TradingView
 new TradingView.widget({
@@ -21,6 +22,12 @@ new TradingView.widget({
 
 // Ana Motor
 async function startEngine() {
+
+    if (engineRunning) return;
+
+    engineRunning = true;
+
+    try {
 
     // Binance verilerini çek
     const loadedCandles = await fetchCandles(currentCoin, currentInterval);
@@ -53,6 +60,10 @@ async function startEngine() {
 
     // Arayüzü güncelle
     updateUI(result, price);
+
+    } finally {
+        engineRunning = false;
+    }
 
 }
 
