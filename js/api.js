@@ -12,10 +12,22 @@ async function fetchCandles(symbol, interval) {
             `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=500`
         );
 
+        if (!res.ok) {
+            throw new Error(`Candles request failed: ${res.status}`);
+        }
+
         const data = await res.json();
 
-        candles = data.map(c => ({
-            time: c[0],
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error("Invalid candles response: expected a non-empty array");
+        }
+
+        if (!data.every(c => Array.isArray(c) && c.length >= 6)) {
+            throw new Error("Invalid candles response: missing candle fields");
+        }
+
+        const parsedCandles = data.map(c => ({
+            time: Number(c[0]),
             open: Number(c[1]),
             high: Number(c[2]),
             low: Number(c[3]),
@@ -23,11 +35,27 @@ async function fetchCandles(symbol, interval) {
             volume: Number(c[5])
         }));
 
+        const candlesAreValid = parsedCandles.every(c =>
+            Number.isFinite(c.time) &&
+            Number.isFinite(c.open) &&
+            Number.isFinite(c.high) &&
+            Number.isFinite(c.low) &&
+            Number.isFinite(c.close) &&
+            Number.isFinite(c.volume)
+        );
+
+        if (!candlesAreValid) {
+            throw new Error("Invalid candles response: non-finite numeric value");
+        }
+
+        candles = parsedCandles;
+
         return candles;
 
     } catch (err) {
-        console.error("Candles Error:", err);
-        return [];
+        candles = [];
+        console.error("Candles Error: candle data rejected; engine cycle stopped.", err);
+        return null;
     }
 }
 
