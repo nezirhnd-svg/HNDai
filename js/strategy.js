@@ -7,6 +7,9 @@
 console.log("STRATEGY V2 LOADED");
 
 const MAX_MARKET_SCORE = 75;
+const MIN_SIGNAL_SCORE = 40;
+const MIN_COUNTER_TREND_SCORE = 60;
+const MIN_DIRECTIONAL_EDGE = 15;
 
 // ==========================
 // Trend Score
@@ -197,6 +200,8 @@ function analyzeMarket() {
 
     const bullScore = trend.bullScore + structure.bullScore + smc.bullScore;
     const bearScore = trend.bearScore + structure.bearScore + smc.bearScore;
+    const dominantScore = Math.max(bullScore, bearScore);
+    const opposingScore = Math.min(bullScore, bearScore);
     const scoreDifference = Math.abs(bullScore - bearScore);
     const marketBias = bullScore > bearScore
         ? "BULLISH"
@@ -218,53 +223,85 @@ function analyzeMarket() {
     };
 
     let signal = "WAIT";
-const rawConfidence = Math.max(bullScore, bearScore);
+    let signalReason = "SIGNAL CONDITIONS NOT MET";
+const rawConfidence = dominantScore;
+const marketStrength = Math.min(
+    100,
+    Math.max(0, Math.round((dominantScore / MAX_MARKET_SCORE) * 100))
+);
 const confidence = Math.min(
     100,
-    Math.max(0, Math.round((rawConfidence / MAX_MARKET_SCORE) * 100))
+    Math.max(0, Math.round((scoreDifference / MAX_MARKET_SCORE) * 100))
+);
+const conflictScore = Math.min(
+    100,
+    Math.max(0, Math.round((opposingScore / MAX_MARKET_SCORE) * 100))
 );
 
-// LONG
-if (
-    trend.direction === "BULLISH" &&
-    bullScore >= 40
-) {
-    signal = "LONG";
+if (marketBias === "NEUTRAL") {
+    signalReason = "NEUTRAL MARKET BIAS";
 }
-
-// SHORT
-else if (
-    trend.direction === "BEARISH" &&
-    bearScore >= 40
-) {
-    signal = "SHORT";
+else if (scoreDifference < MIN_DIRECTIONAL_EDGE) {
+    signalReason = "INSUFFICIENT DIRECTIONAL EDGE";
 }
-
-// Counter Trend SHORT
+// Counter-trend SHORT
 else if (
     trend.direction === "BULLISH" &&
-    bearScore >= 60
+    marketBias === "BEARISH" &&
+    bearScore >= MIN_COUNTER_TREND_SCORE &&
+    scoreDifference >= MIN_DIRECTIONAL_EDGE
 ) {
     signal = "SHORT";
+    signalReason = "COUNTER-TREND BEARISH REVERSAL";
 }
-
-// Counter Trend LONG
+// Counter-trend LONG
 else if (
     trend.direction === "BEARISH" &&
-    bullScore >= 60
+    marketBias === "BULLISH" &&
+    bullScore >= MIN_COUNTER_TREND_SCORE &&
+    scoreDifference >= MIN_DIRECTIONAL_EDGE
 ) {
     signal = "LONG";
+    signalReason = "COUNTER-TREND BULLISH REVERSAL";
+}
+// Trend-following LONG
+else if (
+    trend.direction === "BULLISH" &&
+    marketBias === "BULLISH" &&
+    bullScore >= MIN_SIGNAL_SCORE &&
+    scoreDifference >= MIN_DIRECTIONAL_EDGE
+) {
+    signal = "LONG";
+    signalReason = "BULLISH TREND CONFIRMED";
+}
+// Trend-following SHORT
+else if (
+    trend.direction === "BEARISH" &&
+    marketBias === "BEARISH" &&
+    bearScore >= MIN_SIGNAL_SCORE &&
+    scoreDifference >= MIN_DIRECTIONAL_EDGE
+) {
+    signal = "SHORT";
+    signalReason = "BEARISH TREND CONFIRMED";
 }
 
     return {
         signal,
+        signalReason,
         confidence,
         rawConfidence,
         trend: trend.direction,
         bullScore,
         bearScore,
+        dominantScore,
+        opposingScore,
+        marketStrength,
+        conflictScore,
         scoreDifference,
         marketBias,
+        minimumSignalScore: MIN_SIGNAL_SCORE,
+        minimumCounterTrendScore: MIN_COUNTER_TREND_SCORE,
+        minimumDirectionalEdge: MIN_DIRECTIONAL_EDGE,
         breakdown: {
             trend,
             structure,
