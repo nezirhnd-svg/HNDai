@@ -23,7 +23,12 @@ new TradingView.widget({
 async function startEngine() {
 
     // Binance verilerini çek
-    await fetchCandles(currentCoin, currentInterval);
+    const loadedCandles = await fetchCandles(currentCoin, currentInterval);
+
+    if (!Array.isArray(loadedCandles) || loadedCandles.length < 200) {
+        console.error("Engine stopped: at least 200 valid candles are required");
+        return;
+    }
 
     // Canlı fiyat
     const price = await fetchPrice(currentCoin);
