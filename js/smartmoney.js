@@ -231,7 +231,7 @@ function detectBOS() {
 
         !candles ||
 
-        candles.length === 0
+       candles.length < 2
 
     ) {
 
