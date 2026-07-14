@@ -10,9 +10,9 @@ console.log("STRATEGY V2 LOADED");
 // Trend Score
 // ==========================
 
-function getTrendScore() {
+function getTrendScore(emaValues = getEMAValues()) {
 
-    const { ema20, ema50, ema200 } = getEMAValues();
+    const { ema20, ema50, ema200 } = emaValues;
 
     if (ema20 > ema50 && ema50 > ema200) {
 
@@ -131,7 +131,9 @@ function getSMCScore() {
 
 function analyzeMarket() {
 
-    const trend = getTrendScore();
+    const { ema20, ema50, ema200 } = getEMAValues();
+    const rsi = calculateRSI();
+    const trend = getTrendScore({ ema20, ema50, ema200 });
     const structure = getStructureScore();
     const smc = getSMCScore();
 
@@ -187,6 +189,10 @@ else if (
         confidence,
         trend: trend.direction,
         bullScore,
-        bearScore
+        bearScore,
+        ema20,
+        ema50,
+        ema200,
+        rsi
     };
 }
