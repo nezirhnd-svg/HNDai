@@ -4,135 +4,95 @@
 
 console.log("HNDai UI v3");
 
+function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+}
+
+function formatNumber(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : "-";
+}
+
+function setEvidence(id, evidence, emptyMessage) {
+    const container = document.getElementById(id);
+    if (!container) return;
+
+    container.replaceChildren();
+
+    if (!Array.isArray(evidence) || evidence.length === 0) {
+        container.textContent = emptyMessage;
+        return;
+    }
+
+    evidence.forEach(item => {
+        const line = document.createElement("div");
+        line.textContent = String(item);
+        container.appendChild(line);
+    });
+}
+
 function updateUI(result, price) {
-
-    // ==========================
-    // AI SIGNAL
-    // ==========================
-
     const signal = document.getElementById("signal");
 
-    signal.innerText = result.signal;
+    const signalValue = result?.signal ?? "WAIT";
+    setText("signal", signalValue);
 
-    if (result.signal === "LONG") {
-        signal.style.color = "#22c55e";
-    } else if (result.signal === "SHORT") {
-        signal.style.color = "#ef4444";
-    } else {
-        signal.style.color = "#facc15";
+    if (signal) {
+        signal.style.color = signalValue === "LONG"
+            ? "#22c55e"
+            : signalValue === "SHORT"
+                ? "#ef4444"
+                : "#facc15";
     }
 
-    // ==========================
-    // Confidence
-    // ==========================
+    setText("confidence", Number.isFinite(result?.confidence) ? `${result.confidence}%` : "0%");
+    setText("signalReason", result?.signalReason ?? "-");
+    setText("marketBias", result?.marketBias ?? "-");
+    setText("marketStrength", Number.isFinite(result?.marketStrength) ? `${result.marketStrength}%` : "0%");
+    setText("conflictScore", Number.isFinite(result?.conflictScore) ? `${result.conflictScore}%` : "0%");
+    setText("scoreDifference", Number.isFinite(result?.scoreDifference) ? result.scoreDifference : "-");
 
-    document.getElementById("confidence").innerText =
-        result.confidence + "%";
+    setEvidence("bullishEvidence", result?.evidence?.bullish, "No bullish evidence");
+    setEvidence("bearishEvidence", result?.evidence?.bearish, "No bearish evidence");
 
-    // ==========================
-    // Entry
-    // ==========================
-
-    document.getElementById("entry").innerText =
-        price.toFixed(2);
-
-    // ==========================
-    // Trade
-    // ==========================
+    setText("entry", formatNumber(price));
 
     if (activeTrade) {
-
-        document.getElementById("sl").innerText =
-            activeTrade.stopLoss.toFixed(2);
-
-        document.getElementById("tp").innerText =
-            activeTrade.takeProfit.toFixed(2);
-
+        setText("sl", formatNumber(activeTrade.stopLoss));
+        setText("tp", formatNumber(activeTrade.takeProfit));
     } else {
-
-        document.getElementById("sl").innerText = "-";
-        document.getElementById("tp").innerText = "-";
-
+        setText("sl", "-");
+        setText("tp", "-");
     }
-const confidence = document.getElementById("confidence");
-if (confidence) {
-    confidence.innerText = result.confidence + "%";
-}
 
-const trend = document.getElementById("trend");
-if (trend) {
-    trend.innerText = result.trend;
-}
+    setText("trend", result?.trend ?? "-");
+    setText("bullScore", result?.bullScore ?? "-");
+    setText("bearScore", result?.bearScore ?? "-");
+    setText("ema20", formatNumber(result?.ema20));
+    setText("ema50", formatNumber(result?.ema50));
+    setText("ema200", formatNumber(result?.ema200));
+    setText("rsi", formatNumber(result?.rsi));
+    setText("macd", "Coming Soon");
 
-const bullScore = document.getElementById("bullScore");
-if (bullScore) {
-    bullScore.innerText = result.bullScore ?? "-";
-}
-
-const bearScore = document.getElementById("bearScore");
-if (bearScore) {
-    bearScore.innerText = result.bearScore ?? "-";
-}
-    // ==========================
-    // Indicators
-    // ==========================
-
-    document.getElementById("ema20").innerText =
-        result.ema20 ? result.ema20.toFixed(2) : "-";
-
-    document.getElementById("ema50").innerText =
-        result.ema50 ? result.ema50.toFixed(2) : "-";
-
-    document.getElementById("ema200").innerText =
-        result.ema200 ? result.ema200.toFixed(2) : "-";
-
-    document.getElementById("rsi").innerText =
-        result.rsi ? result.rsi.toFixed(2) : "-";
-
-    document.getElementById("macd").innerText =
-        "Coming Soon";
-
-    // ==========================
-    // Smart Money
-    // ==========================
-
-  const bos = detectBOS();
-
-document.getElementById("bos").innerText =
-    bos || "NO BOS";
-    document.getElementById("choch").innerText =
-        detectCHoCH();
+    const bos = detectBOS();
+    setText("bos", bos || "NO BOS");
+    setText("choch", detectCHoCH() || "NO CHOCH");
 
     const ob = detectOrderBlock();
+    setText(
+        "ob",
+        ob
+            ? `${ob.type} (${formatNumber(ob.low)} - ${formatNumber(ob.high)})`
+            : "NO OB"
+    );
 
-if (ob) {
+    const fvg = detectFVG();
+    setText(
+        "fvg",
+        fvg
+            ? `${fvg.type} (${formatNumber(fvg.bottom)} - ${formatNumber(fvg.top)})`
+            : "NO FVG"
+    );
 
-    document.getElementById("ob").innerText =
-        `${ob.type} (${ob.low.toFixed(2)} - ${ob.high.toFixed(2)})`;
-
-} else {
-
-    document.getElementById("ob").innerText =
-        "NO OB";
-
-}
-
-   const fvg = detectFVG();
-
-if (fvg) {
-
-    document.getElementById("fvg").innerText =
-        `${fvg.type} (${fvg.bottom.toFixed(2)} - ${fvg.top.toFixed(2)})`;
-
-} else {
-
-    document.getElementById("fvg").innerText =
-        "NO FVG";
-
-}
-
- document.getElementById("liq").innerText =
-    detectLiquidity();
-
-
+    setText("liq", detectLiquidity() || "-");
 }
