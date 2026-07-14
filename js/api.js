@@ -39,15 +39,24 @@ async function fetchPrice(symbol) {
             `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
         );
 
-        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(`Price request failed: ${res.status}`);
+        }
 
-        currentPrice = Number(data.price);
+        const data = await res.json();
+        const price = Number(data.price);
+
+        if (!Number.isFinite(price) || price <= 0) {
+            throw new Error("Invalid price data");
+        }
+
+        currentPrice = price;
 
         return currentPrice;
 
     } catch (err) {
         console.error("Price Error:", err);
-        return 0;
+        return null;
     }
 }
 // Close fiyatlarını döndür
