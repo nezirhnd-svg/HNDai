@@ -1049,6 +1049,9 @@ function detectLiquidityZones(options = {}) {
             const firstTouchIndex = touchIndices[0];
             const lastTouchIndex = touchIndices[touchIndices.length - 1];
             const startTime = touchTimes[0];
+            const confirmationPoint = uniquePoints[normalizedOptions.minTouches - 1];
+            const confirmedTime = confirmationPoint.time;
+            const confirmedIndex = confirmationPoint.index;
             const id = `LIQ-${type}-${startTime}-${firstTouchIndex}`;
             const calculatedDistancePercent = marketData.lastClose === null
                 ? null
@@ -1077,6 +1080,7 @@ function detectLiquidityZones(options = {}) {
                 firstTouchIndex,
                 lastTouchIndex,
                 startTime,
+                confirmedTime,
                 lastTouchTime: touchTimes[touchTimes.length - 1],
                 status: "ACTIVE",
                 sweepIndex: null,
@@ -1091,10 +1095,10 @@ function detectLiquidityZones(options = {}) {
                     statusScore: 15
                 },
                 distancePercent,
-                endTime: marketData.lastValidTime
+                endTime: null
             };
 
-            for (let i = lastTouchIndex + 1; i < data.length; i++) {
+            for (let i = confirmedIndex + 1; i < data.length; i++) {
                 const interaction = data[i];
 
                 if (!isValidSmartMoneyCandle(interaction)) {
@@ -1122,6 +1126,7 @@ function detectLiquidityZones(options = {}) {
                     zone.sweepIndex = i;
                     zone.sweepTime = interaction.time;
                     zone.endTime = interaction.time;
+                    break;
                 }
             }
 
@@ -1328,14 +1333,12 @@ function detectStructureEvents(options = {}) {
 
         const bullishBreaks = highs.filter(swing =>
             !consumed.has(swingKey(swing)) &&
-            previousIndex > swing.swingConfirmationIndex &&
-            previousCandle.close > swing.price &&
+            confirmationIndex > swing.swingConfirmationIndex &&
             currentCandle.close > swing.price
         );
         const bearishBreaks = lows.filter(swing =>
             !consumed.has(swingKey(swing)) &&
-            previousIndex > swing.swingConfirmationIndex &&
-            previousCandle.close < swing.price &&
+            confirmationIndex > swing.swingConfirmationIndex &&
             currentCandle.close < swing.price
         );
 
@@ -1364,7 +1367,7 @@ function detectStructureEvents(options = {}) {
         const distance = Math.abs(currentCandle.close - swing.price) /
             swing.price * 100;
         const distancePercent = Number.isFinite(distance) ? distance : null;
-        const id = `STRUCTURE-${eventType}-${direction}-${swing.time}-${swing.index}-${confirmationIndex}`;
+        const id = `STRUCTURE-${eventType}-${direction}-${swing.time}-${currentCandle.time}`;
 
         if (eventIds.has(id)) {
             continue;
@@ -1386,6 +1389,7 @@ function detectStructureEvents(options = {}) {
             confirmationIndex,
             breakStartTime: previousCandle.time,
             confirmationTime: currentCandle.time,
+            breakTime: currentCandle.time,
             previousClose: previousCandle.close,
             confirmationClose: currentCandle.close,
             structureBiasBefore,

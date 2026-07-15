@@ -14,6 +14,7 @@ let hndChartDataCount = 0;
 let hndChartLastError = null;
 let hndChartControlsInitialized = false;
 let hndChartResizeHandler = null;
+let hndChartLastCandleTime = null;
 let hndOverlayCanvas = null;
 let hndOverlayContext = null;
 let hndOverlayData = null;
@@ -21,6 +22,7 @@ let hndOverlayAnimationFrame = null;
 let hndOverlaySubscriptionsInitialized = false;
 let hndOverlayLastRenderStats = {
     structureEvents: 0,
+    structureLabels: 0,
     liquidityZones: 0
 };
 
@@ -126,6 +128,13 @@ function normalizeHNDOverlayData(source) {
             zone.zoneHigh < zone.zoneLow
         ) return null;
 
+        const startTime = normalizeHNDOverlayTime(zone.startTime);
+        const confirmedTime = normalizeHNDOverlayTime(zone.confirmedTime);
+        const sweepTime = normalizeHNDOverlayTime(zone.sweepTime);
+        const endTime = normalizeHNDOverlayTime(zone.endTime);
+        if (startTime === null) return null;
+        if (zone.status === "SWEPT" && endTime === null && sweepTime === null) return null;
+
         return {
             id: zone.id,
             type: zone.type,
@@ -135,7 +144,11 @@ function normalizeHNDOverlayData(source) {
             strength: Math.min(100, Math.max(0,
                 Number.isFinite(zone.strength) ? zone.strength : 0
             )),
-            status: zone.status
+            status: zone.status,
+            startTime,
+            confirmedTime,
+            sweepTime,
+            endTime: zone.status === "SWEPT" ? (endTime ?? sweepTime) : null
         };
     };
 
@@ -229,7 +242,7 @@ function getHNDOverlayCoordinate(value, maximum) {
         : null;
 }
 
-function drawHNDStructureEvent(ctx, event, width, height) {
+function drawHNDStructureEvent(ctx, event, width, height, labelRects = [], labelStats = null) {
     try {
         const x1Raw = hndChart.timeScale().timeToCoordinate(event.startTime);
         const x2Raw = hndChart.timeScale().timeToCoordinate(event.endTime);
@@ -254,12 +267,40 @@ function drawHNDStructureEvent(ctx, event, width, height) {
         ctx.font = "11px Arial";
         const text = event.label;
         const textWidth = ctx.measureText(text).width;
-        const labelX = Math.max(2, Math.min(width - textWidth - 8, right - textWidth));
-        const labelY = Math.max(14, Math.min(height - 4, y - 4));
-        ctx.fillStyle = "rgba(15,23,42,.82)";
-        ctx.fillRect(labelX - 3, labelY - 12, textWidth + 6, 15);
-        ctx.fillStyle = color;
-        ctx.fillText(text, labelX, labelY);
+        const labelX = Math.max(3, Math.min(width - textWidth - 5, right - textWidth));
+        const offsets = [0, -16, 16, -32, 32, -48, 48];
+        let labelRect = null;
+
+        for (const offset of offsets) {
+            const labelY = y - 4 + offset;
+            const candidate = {
+                left: labelX - 3,
+                top: labelY - 12,
+                right: labelX + textWidth + 3,
+                bottom: labelY + 3,
+                labelY
+            };
+            const inside = candidate.left >= 0 && candidate.right <= width &&
+                candidate.top >= 0 && candidate.bottom <= height;
+            const overlaps = labelRects.some(rect =>
+                candidate.left < rect.right + 4 && candidate.right + 4 > rect.left &&
+                candidate.top < rect.bottom + 4 && candidate.bottom + 4 > rect.top
+            );
+            if (inside && !overlaps) {
+                labelRect = candidate;
+                break;
+            }
+        }
+
+        if (labelRect) {
+            labelRects.push(labelRect);
+            ctx.fillStyle = "rgba(15,23,42,.82)";
+            ctx.fillRect(labelRect.left, labelRect.top,
+                labelRect.right - labelRect.left, labelRect.bottom - labelRect.top);
+            ctx.fillStyle = color;
+            ctx.fillText(text, labelX, labelRect.labelY);
+            if (labelStats) labelStats.count++;
+        }
         ctx.restore();
         return true;
     } catch (error) {
@@ -270,9 +311,21 @@ function drawHNDStructureEvent(ctx, event, width, height) {
 
 function drawHNDLiquidityZone(ctx, zone, isOverall, width, height) {
     try {
+        const endTime = zone.status === "SWEPT"
+            ? (zone.endTime ?? zone.sweepTime)
+            : hndChartLastCandleTime;
+        if (!Number.isFinite(zone.startTime) || !Number.isFinite(endTime)) return false;
+        const x1Raw = hndChart.timeScale().timeToCoordinate(zone.startTime);
+        const x2Raw = hndChart.timeScale().timeToCoordinate(endTime);
         const highRaw = hndCandleSeries.priceToCoordinate(zone.zoneHigh);
         const lowRaw = hndCandleSeries.priceToCoordinate(zone.zoneLow);
-        if (![highRaw, lowRaw].every(Number.isFinite)) return false;
+        if (![x1Raw, x2Raw, highRaw, lowRaw].every(Number.isFinite)) return false;
+        let left = Math.min(x1Raw, x2Raw);
+        let right = Math.max(x1Raw, x2Raw);
+        if (right < 0 || left > width) return false;
+        left = getHNDOverlayCoordinate(left, width);
+        right = getHNDOverlayCoordinate(right, width);
+        if (left === null || right === null || right <= left) return false;
         let top = Math.min(highRaw, lowRaw);
         let bottom = Math.max(highRaw, lowRaw);
         if (bottom < 0 || top > height) return false;
@@ -288,19 +341,19 @@ function drawHNDLiquidityZone(ctx, zone, isOverall, width, height) {
 
         ctx.save();
         ctx.fillStyle = fill;
-        ctx.fillRect(0, top, width, Math.max(1, bottom - top));
+        ctx.fillRect(left, top, right - left, Math.max(1, bottom - top));
         ctx.strokeStyle = color;
         ctx.lineWidth = isOverall ? 2.5 : 1;
         ctx.setLineDash(swept ? [6, 4] : []);
         ctx.beginPath();
-        ctx.moveTo(0, top); ctx.lineTo(width, top);
-        ctx.moveTo(0, bottom); ctx.lineTo(width, bottom);
+        ctx.moveTo(left, top); ctx.lineTo(right, top);
+        ctx.moveTo(left, bottom); ctx.lineTo(right, bottom);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.font = "11px Arial";
         const text = `${buySide ? "BUY" : "SELL"} LIQ • ${Math.round(zone.strength)}${swept ? " • SWEPT" : ""}`;
         const textWidth = ctx.measureText(text).width;
-        const labelX = Math.max(2, width - textWidth - 8);
+        const labelX = Math.max(2, Math.min(width - textWidth - 5, right - textWidth - 3));
         const labelY = Math.max(14, Math.min(height - 4, top + 14));
         ctx.fillStyle = "rgba(15,23,42,.84)";
         ctx.fillRect(labelX - 3, labelY - 12, textWidth + 6, 15);
@@ -321,6 +374,7 @@ function renderHNDOverlays() {
     const width = parseFloat(hndOverlayCanvas.style.width) || hndOverlayCanvas.clientWidth || 0;
     const height = parseFloat(hndOverlayCanvas.style.height) || hndOverlayCanvas.clientHeight || 0;
     let structureEvents = 0;
+    const labelStats = { count: 0 };
     let liquidityZones = 0;
     const strongest = hndOverlayData.strongestLiquidity || {};
     const drawnZones = new Set();
@@ -335,10 +389,42 @@ function renderHNDOverlays() {
         drawnZones.add(zone.id);
         if (drawHNDLiquidityZone(hndOverlayContext, zone, isOverall, width, height)) liquidityZones++;
     }
-    for (const event of hndOverlayData.structureEvents.slice(-20)) {
-        if (drawHNDStructureEvent(hndOverlayContext, event, width, height)) structureEvents++;
+    const visibleEvents = hndOverlayData.structureEvents.slice(-20)
+        .map(event => ({
+            event,
+            x2: hndChart.timeScale().timeToCoordinate(event.endTime),
+            y: hndCandleSeries.priceToCoordinate(event.level)
+        }))
+        .filter(item => Number.isFinite(item.x2) && Number.isFinite(item.y));
+    const displayEvents = [];
+
+    for (let i = visibleEvents.length - 1; i >= 0; i--) {
+        const candidate = visibleEvents[i];
+        const duplicate = displayEvents.some(existing =>
+            existing.event.eventType === candidate.event.eventType &&
+            existing.event.direction === candidate.event.direction &&
+            Math.abs(existing.y - candidate.y) < 4 &&
+            Math.abs(existing.x2 - candidate.x2) < 12
+        );
+        if (!duplicate) displayEvents.push(candidate);
     }
-    hndOverlayLastRenderStats = { structureEvents, liquidityZones };
+
+    displayEvents.sort((a, b) =>
+        (a.event.eventType === "CHOCH" ? 0 : 1) -
+        (b.event.eventType === "CHOCH" ? 0 : 1) ||
+        b.event.endTime - a.event.endTime
+    );
+    const labelRects = [];
+    for (const { event } of displayEvents) {
+        if (drawHNDStructureEvent(
+            hndOverlayContext, event, width, height, labelRects, labelStats
+        )) structureEvents++;
+    }
+    hndOverlayLastRenderStats = {
+        structureEvents,
+        structureLabels: labelStats.count,
+        liquidityZones
+    };
     return true;
 }
 
@@ -375,7 +461,12 @@ function clearHNDOverlays() {
         strongestLiquidity: { overall: null, buySide: null, sellSide: null }
     };
     clearHNDOverlayCanvas();
-    hndOverlayLastRenderStats = { structureEvents: 0, liquidityZones: 0 };
+    hndChartLastCandleTime = null;
+    hndOverlayLastRenderStats = {
+        structureEvents: 0,
+        structureLabels: 0,
+        liquidityZones: 0
+    };
 }
 
 function resizeHNDChartToContainer() {
@@ -412,6 +503,10 @@ function initHNDChart() {
     try {
         const width = Math.max(320, container.clientWidth || 0);
         const height = Math.max(300, container.clientHeight || 0);
+        const normalCrosshairMode = library.CrosshairMode &&
+            Number.isFinite(library.CrosshairMode.Normal)
+            ? library.CrosshairMode.Normal
+            : 0;
         const chart = library.createChart(container, {
             width,
             height,
@@ -421,6 +516,7 @@ function initHNDChart() {
                 horzLines: { color: "rgba(71,85,105,.22)" }
             },
             rightPriceScale: { borderColor: "#334155" },
+            crosshair: { mode: normalCrosshairMode },
             timeScale: { borderColor: "#334155", timeVisible: true, secondsVisible: false }
         });
         const series = chart.addSeries(library.CandlestickSeries, {
@@ -486,6 +582,7 @@ function initHNDChart() {
 function updateHNDChart(sourceCandles) {
     const normalizedCandles = normalizeHNDChartCandles(sourceCandles);
     if (!normalizedCandles.length) {
+        hndChartLastCandleTime = null;
         setHNDChartText("hndChartStatus", "No valid chart data");
         return false;
     }
@@ -493,6 +590,7 @@ function updateHNDChart(sourceCandles) {
 
     try {
         hndCandleSeries.setData(normalizedCandles);
+        hndChartLastCandleTime = normalizedCandles[normalizedCandles.length - 1].time;
         hndChartDataCount = normalizedCandles.length;
         if (hndChartNeedsFit) {
             hndChart.timeScale().fitContent();
@@ -583,7 +681,8 @@ window.HNDChartEngine = {
                 canvasReady: Boolean(hndOverlayCanvas && hndOverlayContext),
                 structureEventCount: hndOverlayData?.structureEvents?.length || 0,
                 liquidityZoneCount: liquidityIds.size,
-                lastRenderStats: { ...hndOverlayLastRenderStats }
+                lastRenderStats: { ...hndOverlayLastRenderStats },
+                lastCandleTime: hndChartLastCandleTime
             }
         };
     }
