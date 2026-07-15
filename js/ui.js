@@ -74,11 +74,13 @@ function updateUI(result, price) {
     setText("rsi", formatNumber(result?.rsi));
     setText("macd", "Coming Soon");
 
-    const bos = detectBOS();
-    setText("bos", bos || "NO BOS");
-    setText("choch", detectCHoCH() || "NO CHOCH");
+    const structure = result?.breakdown?.structure;
+    const smc = result?.breakdown?.smc;
 
-    const ob = detectOrderBlock();
+    setText("bos", structure?.bos || "NO BOS");
+    setText("choch", structure?.choch || "NO CHOCH");
+
+    const ob = smc?.orderBlock;
     setText(
         "ob",
         ob
@@ -86,7 +88,7 @@ function updateUI(result, price) {
             : "NO OB"
     );
 
-    const fvg = detectFVG();
+    const fvg = smc?.fvg;
     setText(
         "fvg",
         fvg
@@ -94,5 +96,5 @@ function updateUI(result, price) {
             : "NO FVG"
     );
 
-    setText("liq", detectLiquidity() || "-");
+    setText("liq", smc?.liquidity || "-");
 }

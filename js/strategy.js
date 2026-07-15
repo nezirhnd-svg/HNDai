@@ -123,6 +123,7 @@ function getSMCScore() {
 
     const orderBlock = detectOrderBlock();
     const fvg = detectFVG();
+    const liquidity = detectLiquidity();
     const liquiditySweep = detectLiquiditySweep();
 
     let bullScore = 0;
@@ -184,6 +185,7 @@ function getSMCScore() {
         evidence,
         orderBlock,
         fvg,
+        liquidity,
         liquiditySweep
     };
 
