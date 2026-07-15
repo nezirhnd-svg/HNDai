@@ -78,6 +78,7 @@ function setupMarketControls() {
 
         currentCoin = selectedCoin;
         activeTrade = null;
+        window.HNDChartEngine?.requestFit?.();
         initTradingView();
         startEngine();
     });
@@ -94,6 +95,7 @@ function setupMarketControls() {
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
         activeTrade = null;
+        window.HNDChartEngine?.requestFit?.();
         initTradingView();
         startEngine();
     });
@@ -101,6 +103,13 @@ function setupMarketControls() {
 
 initTradingView();
 setupMarketControls();
+
+if (
+    window.HNDChartEngine &&
+    typeof window.HNDChartEngine.setupControls === "function"
+) {
+    window.HNDChartEngine.setupControls();
+}
 
 // Ana Motor
 async function startEngine() {
@@ -122,6 +131,17 @@ async function startEngine() {
     if (!Array.isArray(loadedCandles) || loadedCandles.length < 200) {
         console.error("Engine stopped: at least 200 valid candles are required");
         return;
+    }
+
+    try {
+        if (
+            window.HNDChartEngine &&
+            typeof window.HNDChartEngine.update === "function"
+        ) {
+            window.HNDChartEngine.update(loadedCandles);
+        }
+    } catch (chartError) {
+        console.warn("HNDai Chart update failed; the analysis engine will continue.", chartError);
     }
 
     // Canlı fiyat

@@ -10,6 +10,9 @@
 <link rel="stylesheet" href="style.css">
 
 <script src="https://s3.tradingview.com/tv.js"></script>
+<script
+    src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js">
+</script>
 
 </head>
 
@@ -62,7 +65,29 @@ TradeAI Pro
 
 <main class="container">
 <section class="left">
-<div id="tvchart"></div>
+<div class="chart-shell">
+    <div class="chart-toolbar">
+        <div class="chart-mode-controls">
+            <button id="chartModeTradingView" class="chart-mode-button active" type="button" aria-pressed="true">
+                TradingView
+            </button>
+            <button id="chartModeHND" class="chart-mode-button" type="button" aria-pressed="false">
+                HNDai Chart
+            </button>
+        </div>
+        <div class="chart-toolbar-info">
+            <span id="hndChartStatus">Chart preparing...</span>
+            <a class="chart-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">
+                Charts by TradingView
+            </a>
+        </div>
+    </div>
+    <div class="chart-stage">
+        <div id="tvchart" class="chart-panel active"></div>
+        <div id="hndChart" class="chart-panel inactive" aria-hidden="true"></div>
+        <div id="hndChartError" class="chart-error" hidden></div>
+    </div>
+</div>
 
 </section>
 
@@ -177,6 +202,7 @@ TradeAI Pro
 <script src="js/strategy.js"></script>
 <script src="js/tradeEngine.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/chart.js"></script>
 
 <script src="script.js"></script>
 
