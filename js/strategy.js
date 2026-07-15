@@ -284,6 +284,37 @@ else if (
     signal = "SHORT";
     signalReason = "BEARISH TREND CONFIRMED";
 }
+else if (
+    trend.direction === "BULLISH" &&
+    marketBias === "BEARISH" &&
+    bearScore < MIN_COUNTER_TREND_SCORE
+) {
+    signalReason = "BEARISH BIAS BELOW COUNTER-TREND THRESHOLD";
+}
+else if (
+    trend.direction === "BEARISH" &&
+    marketBias === "BULLISH" &&
+    bullScore < MIN_COUNTER_TREND_SCORE
+) {
+    signalReason = "BULLISH BIAS BELOW COUNTER-TREND THRESHOLD";
+}
+else if (
+    trend.direction === "BULLISH" &&
+    marketBias === "BULLISH" &&
+    bullScore < MIN_SIGNAL_SCORE
+) {
+    signalReason = "BULLISH SCORE BELOW SIGNAL THRESHOLD";
+}
+else if (
+    trend.direction === "BEARISH" &&
+    marketBias === "BEARISH" &&
+    bearScore < MIN_SIGNAL_SCORE
+) {
+    signalReason = "BEARISH SCORE BELOW SIGNAL THRESHOLD";
+}
+else if (trend.direction === "SIDEWAYS") {
+    signalReason = "SIDEWAYS TREND — NO CONFIRMATION";
+}
 
     return {
         signal,
