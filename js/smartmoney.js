@@ -848,10 +848,389 @@ function detectFVGs(options = {}) {
     return applySmartMoneyZoneOptions(zones, normalizedOptions);
 }
 
+function getLiquidityZoneOptions(options = {}) {
+    return {
+        lookback: Number.isInteger(options.lookback) && options.lookback >= 1
+            ? options.lookback
+            : 3,
+        tolerance: Number.isFinite(options.tolerance) && options.tolerance > 0
+            ? options.tolerance
+            : 0.0015,
+        minTouches: Number.isInteger(options.minTouches) && options.minTouches >= 2
+            ? options.minTouches
+            : 2,
+        limit: Number.isInteger(options.limit) && options.limit >= 0
+            ? options.limit
+            : 20,
+        includeSwept: options.includeSwept !== false,
+        includeBroken: options.includeBroken === true
+    };
+}
+
+function getValidLiquidityMarketData(data) {
+    const validIndices = [];
+    const volumes = [];
+
+    for (let i = 0; i < data.length; i++) {
+        if (!isValidSmartMoneyCandle(data[i])) {
+            continue;
+        }
+
+        validIndices.push(i);
+
+        if (Number.isFinite(data[i].volume) && data[i].volume >= 0) {
+            volumes.push(data[i].volume);
+        }
+    }
+
+    const averageMarketVolume = volumes.length
+        ? volumes.reduce((sum, volume) => sum + volume, 0) / volumes.length
+        : null;
+    const lastValidCandleIndex = validIndices.length
+        ? validIndices[validIndices.length - 1]
+        : null;
+    const lastCandle = lastValidCandleIndex === null
+        ? null
+        : data[lastValidCandleIndex];
+
+    return {
+        averageMarketVolume: Number.isFinite(averageMarketVolume)
+            ? averageMarketVolume
+            : null,
+        lastValidCandleIndex,
+        lastValidTime: lastCandle ? lastCandle.time : null,
+        lastClose: lastCandle && Number.isFinite(lastCandle.close) && lastCandle.close !== 0
+            ? lastCandle.close
+            : null
+    };
+}
+
+function clusterLiquidityCandidates(candidates, tolerance) {
+    const sorted = [...candidates].sort((a, b) =>
+        a.price - b.price || a.index - b.index || a.time - b.time
+    );
+    const clusters = [];
+
+    for (const candidate of sorted) {
+        let target = null;
+
+        for (const cluster of clusters) {
+            const relativeDifference = Math.abs(candidate.price - cluster.price) /
+                cluster.price;
+
+            if (Number.isFinite(relativeDifference) && relativeDifference <= tolerance) {
+                target = cluster;
+                break;
+            }
+        }
+
+        if (!target) {
+            clusters.push({
+                type: candidate.type,
+                price: candidate.price,
+                points: [candidate]
+            });
+            continue;
+        }
+
+        const nextCount = target.points.length + 1;
+        target.price += (candidate.price - target.price) / nextCount;
+        target.points.push(candidate);
+    }
+
+    return clusters;
+}
+
+function detectLiquidityZones(options = {}) {
+    const data = getSmartMoneyCandleData();
+    const normalizedOptions = getLiquidityZoneOptions(options);
+
+    if (data.length < normalizedOptions.lookback * 2 + 1) {
+        return [];
+    }
+
+    let swings;
+
+    try {
+        swings = getSwings(normalizedOptions.lookback);
+    } catch (error) {
+        return [];
+    }
+
+    const candidatesByType = {
+        BUY_SIDE: [],
+        SELL_SIDE: []
+    };
+    const seenCandidates = new Set();
+
+    const addCandidates = (points, type) => {
+        if (!Array.isArray(points)) {
+            return;
+        }
+
+        for (const point of points) {
+            if (
+                !point ||
+                !Number.isInteger(point.index) ||
+                point.index < 0 ||
+                point.index >= data.length ||
+                !Number.isFinite(point.price) ||
+                point.price <= 0 ||
+                !isValidSmartMoneyCandle(data[point.index])
+            ) {
+                continue;
+            }
+
+            const key = `${type}-${point.index}`;
+
+            if (seenCandidates.has(key)) {
+                continue;
+            }
+
+            seenCandidates.add(key);
+            candidatesByType[type].push({
+                type,
+                index: point.index,
+                price: point.price,
+                time: data[point.index].time
+            });
+        }
+    };
+
+    addCandidates(swings && swings.highs, "BUY_SIDE");
+    addCandidates(swings && swings.lows, "SELL_SIDE");
+
+    const marketData = getValidLiquidityMarketData(data);
+    const zones = [];
+    const zoneIds = new Set();
+
+    for (const type of ["BUY_SIDE", "SELL_SIDE"]) {
+        const clusters = clusterLiquidityCandidates(
+            candidatesByType[type],
+            normalizedOptions.tolerance
+        );
+
+        for (const cluster of clusters) {
+            if (cluster.points.length < normalizedOptions.minTouches) {
+                continue;
+            }
+
+            const points = [...cluster.points].sort((a, b) =>
+                a.index - b.index || a.time - b.time || a.price - b.price
+            );
+            const uniquePoints = points.filter((point, index) =>
+                index === 0 || point.index !== points[index - 1].index
+            );
+
+            if (uniquePoints.length < normalizedOptions.minTouches) {
+                continue;
+            }
+
+            const prices = uniquePoints.map(point => point.price);
+            const price = prices.reduce(
+                (average, value, index) => average + (value - average) / (index + 1),
+                0
+            );
+            const padding = price * normalizedOptions.tolerance * 0.5;
+            const zoneLow = Math.min(...prices, price - padding);
+            const zoneHigh = Math.max(...prices, price + padding);
+
+            if (
+                !Number.isFinite(price) ||
+                !Number.isFinite(padding) ||
+                !Number.isFinite(zoneLow) ||
+                !Number.isFinite(zoneHigh)
+            ) {
+                continue;
+            }
+
+            const touchIndices = uniquePoints.map(point => point.index);
+            const touchTimes = uniquePoints.map(point => point.time);
+            const firstTouchIndex = touchIndices[0];
+            const lastTouchIndex = touchIndices[touchIndices.length - 1];
+            const startTime = touchTimes[0];
+            const id = `LIQ-${type}-${startTime}-${firstTouchIndex}`;
+            const calculatedDistancePercent = marketData.lastClose === null
+                ? null
+                : Math.abs(price - marketData.lastClose) /
+                    Math.abs(marketData.lastClose) * 100;
+            const distancePercent = Number.isFinite(calculatedDistancePercent)
+                ? calculatedDistancePercent
+                : null;
+
+            if (zoneIds.has(id)) {
+                continue;
+            }
+
+            zoneIds.add(id);
+
+            const zone = {
+                id,
+                kind: "LIQUIDITY",
+                type,
+                price,
+                zoneHigh,
+                zoneLow,
+                touchCount: touchIndices.length,
+                touchIndices,
+                touchTimes,
+                firstTouchIndex,
+                lastTouchIndex,
+                startTime,
+                lastTouchTime: touchTimes[touchTimes.length - 1],
+                status: "ACTIVE",
+                sweepIndex: null,
+                sweepTime: null,
+                brokenIndex: null,
+                brokenTime: null,
+                strength: 0,
+                strengthBreakdown: {
+                    touchScore: 0,
+                    recencyScore: 0,
+                    volumeScore: 0,
+                    statusScore: 15
+                },
+                distancePercent,
+                endTime: marketData.lastValidTime
+            };
+
+            for (let i = lastTouchIndex + 1; i < data.length; i++) {
+                const interaction = data[i];
+
+                if (!isValidSmartMoneyCandle(interaction)) {
+                    continue;
+                }
+
+                const broken = type === "BUY_SIDE"
+                    ? interaction.close > zoneHigh
+                    : interaction.close < zoneLow;
+
+                if (broken) {
+                    zone.status = "BROKEN";
+                    zone.brokenIndex = i;
+                    zone.brokenTime = interaction.time;
+                    zone.endTime = interaction.time;
+                    break;
+                }
+
+                const swept = type === "BUY_SIDE"
+                    ? interaction.high > zoneHigh && interaction.close < price
+                    : interaction.low < zoneLow && interaction.close > price;
+
+                if (swept && zone.status === "ACTIVE") {
+                    zone.status = "SWEPT";
+                    zone.sweepIndex = i;
+                    zone.sweepTime = interaction.time;
+                    zone.endTime = interaction.time;
+                }
+            }
+
+            const touchScore = Math.min(40, zone.touchCount * 10);
+            const barsSinceLastTouch = marketData.lastValidCandleIndex === null
+                ? 0
+                : Math.max(0, marketData.lastValidCandleIndex - zone.lastTouchIndex);
+            const recencyScore = marketData.lastValidCandleIndex === null
+                ? 0
+                : Math.round(Math.max(
+                    0,
+                    25 * (1 - barsSinceLastTouch /
+                        Math.max(1, marketData.lastValidCandleIndex))
+                ));
+            const touchVolumes = zone.touchIndices
+                .map(index => data[index] && data[index].volume)
+                .filter(volume => Number.isFinite(volume) && volume >= 0);
+            const averageTouchVolume = touchVolumes.length
+                ? touchVolumes.reduce((sum, volume) => sum + volume, 0) /
+                    touchVolumes.length
+                : null;
+            const volumeRatio = Number.isFinite(averageTouchVolume) &&
+                Number.isFinite(marketData.averageMarketVolume) &&
+                marketData.averageMarketVolume > 0
+                ? averageTouchVolume / marketData.averageMarketVolume
+                : null;
+            const volumeScore = Number.isFinite(volumeRatio)
+                ? Math.min(20, Math.max(0, Math.round(20 * Math.min(1, volumeRatio))))
+                : 0;
+            const statusScore = zone.status === "ACTIVE"
+                ? 15
+                : zone.status === "SWEPT"
+                    ? 5
+                    : 0;
+
+            zone.strengthBreakdown = {
+                touchScore,
+                recencyScore,
+                volumeScore,
+                statusScore
+            };
+            zone.strength = Math.min(
+                100,
+                touchScore + recencyScore + volumeScore + statusScore
+            );
+
+            zones.push(zone);
+        }
+    }
+
+    const filtered = zones
+        .filter(zone => normalizedOptions.includeSwept || zone.status !== "SWEPT")
+        .filter(zone => normalizedOptions.includeBroken || zone.status !== "BROKEN")
+        .sort((a, b) =>
+            a.firstTouchIndex - b.firstTouchIndex ||
+            a.type.localeCompare(b.type) ||
+            a.id.localeCompare(b.id)
+        );
+
+    return normalizedOptions.limit === 0
+        ? []
+        : filtered.slice(-normalizedOptions.limit);
+}
+
+function getStrongestLiquidityZones(liquidityZones = detectLiquidityZones()) {
+    const zones = Array.isArray(liquidityZones)
+        ? liquidityZones.filter(zone =>
+            zone &&
+            (zone.status === "ACTIVE" || zone.status === "SWEPT") &&
+            Number.isFinite(zone.strength) &&
+            Number.isFinite(zone.touchCount) &&
+            Number.isFinite(zone.lastTouchIndex) &&
+            typeof zone.id === "string"
+        )
+        : [];
+    const compare = (a, b) =>
+        b.strength - a.strength ||
+        b.touchCount - a.touchCount ||
+        (Number.isFinite(a.distancePercent) ? a.distancePercent : Infinity) -
+            (Number.isFinite(b.distancePercent) ? b.distancePercent : Infinity) ||
+        b.lastTouchIndex - a.lastTouchIndex ||
+        a.id.localeCompare(b.id);
+    const select = type => {
+        const typed = type
+            ? zones.filter(zone => zone.type === type)
+            : zones;
+        const active = typed.filter(zone => zone.status === "ACTIVE").sort(compare);
+
+        if (active.length) {
+            return active[0];
+        }
+
+        const swept = typed.filter(zone => zone.status === "SWEPT").sort(compare);
+        return swept.length ? swept[0] : null;
+    };
+
+    return {
+        overall: select(null),
+        buySide: select("BUY_SIDE"),
+        sellSide: select("SELL_SIDE")
+    };
+}
+
 function getSmartMoneyZones(options = {}) {
     const data = getSmartMoneyCandleData();
     const orderBlocks = detectOrderBlocks(options);
     const fvgs = detectFVGs(options);
+    const liquidityZones = detectLiquidityZones(options);
+    const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
     const countStatus = (zones, status) =>
         zones.filter(zone => zone.status === status).length;
 
@@ -862,6 +1241,8 @@ function getSmartMoneyZones(options = {}) {
         candleCount: data.length,
         orderBlocks,
         fvgs,
+        liquidityZones,
+        strongestLiquidity,
         summary: {
             totalOrderBlocks: orderBlocks.length,
             activeOrderBlocks: countStatus(orderBlocks, "ACTIVE"),
@@ -872,7 +1253,17 @@ function getSmartMoneyZones(options = {}) {
             activeFVGs: countStatus(fvgs, "ACTIVE"),
             touchedFVGs: countStatus(fvgs, "TOUCHED"),
             mitigatedFVGs: countStatus(fvgs, "MITIGATED"),
-            invalidatedFVGs: countStatus(fvgs, "INVALIDATED")
+            invalidatedFVGs: countStatus(fvgs, "INVALIDATED"),
+            totalLiquidityZones: liquidityZones.length,
+            activeLiquidityZones: countStatus(liquidityZones, "ACTIVE"),
+            sweptLiquidityZones: countStatus(liquidityZones, "SWEPT"),
+            brokenLiquidityZones: countStatus(liquidityZones, "BROKEN"),
+            buySideLiquidityZones: liquidityZones.filter(
+                zone => zone.type === "BUY_SIDE"
+            ).length,
+            sellSideLiquidityZones: liquidityZones.filter(
+                zone => zone.type === "SELL_SIDE"
+            ).length
         }
     };
 }
