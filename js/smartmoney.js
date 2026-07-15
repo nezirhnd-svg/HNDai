@@ -1225,12 +1225,212 @@ function getStrongestLiquidityZones(liquidityZones = detectLiquidityZones()) {
     };
 }
 
+function getStructureEventOptions(options = {}) {
+    return {
+        lookback: Number.isInteger(options.lookback) && options.lookback >= 1
+            ? options.lookback
+            : 3,
+        limit: Number.isInteger(options.limit) && options.limit >= 0
+            ? options.limit
+            : 50,
+        includeBOS: options.includeBOS !== false,
+        includeCHoCH: options.includeCHoCH !== false
+    };
+}
+
+function detectStructureEvents(options = {}) {
+    const data = getSmartMoneyCandleData();
+    const normalizedOptions = getStructureEventOptions(options);
+
+    if (data.length < normalizedOptions.lookback * 2 + 2) {
+        return [];
+    }
+
+    let swings;
+
+    try {
+        swings = getSwings(normalizedOptions.lookback);
+    } catch (error) {
+        return [];
+    }
+
+    const normalizeSwings = (points, swingType) => {
+        if (!Array.isArray(points)) {
+            return [];
+        }
+
+        const seen = new Set();
+
+        return points
+            .filter(point => {
+                if (
+                    !point ||
+                    !Number.isInteger(point.index) ||
+                    point.index < 0 ||
+                    point.index >= data.length ||
+                    !Number.isFinite(point.price) ||
+                    point.price <= 0 ||
+                    !isValidSmartMoneyCandle(data[point.index])
+                ) {
+                    return false;
+                }
+
+                const key = `${swingType}-${point.index}`;
+
+                if (seen.has(key)) {
+                    return false;
+                }
+
+                seen.add(key);
+                return true;
+            })
+            .map(point => ({
+                swingType,
+                index: point.index,
+                price: point.price,
+                time: data[point.index].time,
+                swingConfirmationIndex: point.index + normalizedOptions.lookback
+            }))
+            .filter(point => point.swingConfirmationIndex < data.length)
+            .sort((a, b) =>
+                a.swingConfirmationIndex - b.swingConfirmationIndex ||
+                a.index - b.index ||
+                a.price - b.price
+            );
+    };
+
+    const highs = normalizeSwings(swings && swings.highs, "HIGH");
+    const lows = normalizeSwings(swings && swings.lows, "LOW");
+    const consumed = new Set();
+    const eventIds = new Set();
+    const events = [];
+    let structureBias = "NEUTRAL";
+
+    const swingKey = swing => `${swing.swingType}-${swing.index}`;
+    const newestSwing = candidates => [...candidates].sort((a, b) =>
+        b.swingConfirmationIndex - a.swingConfirmationIndex ||
+        b.index - a.index ||
+        b.time - a.time ||
+        b.price - a.price
+    )[0];
+
+    for (let confirmationIndex = 1; confirmationIndex < data.length; confirmationIndex++) {
+        const previousIndex = confirmationIndex - 1;
+        const previousCandle = data[previousIndex];
+        const currentCandle = data[confirmationIndex];
+
+        if (
+            !isValidSmartMoneyCandle(previousCandle) ||
+            !isValidSmartMoneyCandle(currentCandle)
+        ) {
+            continue;
+        }
+
+        const bullishBreaks = highs.filter(swing =>
+            !consumed.has(swingKey(swing)) &&
+            previousIndex > swing.swingConfirmationIndex &&
+            previousCandle.close > swing.price &&
+            currentCandle.close > swing.price
+        );
+        const bearishBreaks = lows.filter(swing =>
+            !consumed.has(swingKey(swing)) &&
+            previousIndex > swing.swingConfirmationIndex &&
+            previousCandle.close < swing.price &&
+            currentCandle.close < swing.price
+        );
+
+        if (!bullishBreaks.length && !bearishBreaks.length) {
+            continue;
+        }
+
+        for (const swing of [...bullishBreaks, ...bearishBreaks]) {
+            consumed.add(swingKey(swing));
+        }
+
+        if (bullishBreaks.length && bearishBreaks.length) {
+            continue;
+        }
+
+        const direction = bullishBreaks.length ? "BULLISH" : "BEARISH";
+        const swing = newestSwing(bullishBreaks.length ? bullishBreaks : bearishBreaks);
+        const structureBiasBefore = structureBias;
+        const eventType = structureBias === "NEUTRAL" || structureBias === direction
+            ? "BOS"
+            : "CHOCH";
+
+        structureBias = direction;
+
+        const label = `${direction} ${eventType}`;
+        const distance = Math.abs(currentCandle.close - swing.price) /
+            swing.price * 100;
+        const distancePercent = Number.isFinite(distance) ? distance : null;
+        const id = `STRUCTURE-${eventType}-${direction}-${swing.time}-${swing.index}-${confirmationIndex}`;
+
+        if (eventIds.has(id)) {
+            continue;
+        }
+
+        eventIds.add(id);
+        events.push({
+            id,
+            kind: "STRUCTURE_EVENT",
+            eventType,
+            direction,
+            label,
+            level: swing.price,
+            swingType: swing.swingType,
+            swingIndex: swing.index,
+            swingTime: swing.time,
+            swingConfirmationIndex: swing.swingConfirmationIndex,
+            breakStartIndex: previousIndex,
+            confirmationIndex,
+            breakStartTime: previousCandle.time,
+            confirmationTime: currentCandle.time,
+            previousClose: previousCandle.close,
+            confirmationClose: currentCandle.close,
+            structureBiasBefore,
+            structureBiasAfter: structureBias,
+            distancePercent,
+            startTime: swing.time,
+            endTime: currentCandle.time
+        });
+    }
+
+    const filtered = events.filter(event =>
+        (normalizedOptions.includeBOS || event.eventType !== "BOS") &&
+        (normalizedOptions.includeCHoCH || event.eventType !== "CHOCH")
+    );
+
+    return normalizedOptions.limit === 0
+        ? []
+        : filtered.slice(-normalizedOptions.limit);
+}
+
 function getSmartMoneyZones(options = {}) {
     const data = getSmartMoneyCandleData();
-    const orderBlocks = detectOrderBlocks(options);
-    const fvgs = detectFVGs(options);
-    const liquidityZones = detectLiquidityZones(options);
+    const resolveLimit = (specificLimit, sharedLimit, defaultLimit) =>
+        Number.isInteger(specificLimit) && specificLimit >= 0
+            ? specificLimit
+            : Number.isInteger(sharedLimit) && sharedLimit >= 0
+                ? sharedLimit
+                : defaultLimit;
+    const orderBlocks = detectOrderBlocks({
+        ...options,
+        limit: resolveLimit(options.orderBlockLimit, options.limit, 50)
+    });
+    const fvgs = detectFVGs({
+        ...options,
+        limit: resolveLimit(options.fvgLimit, options.limit, 50)
+    });
+    const liquidityZones = detectLiquidityZones({
+        ...options,
+        limit: resolveLimit(options.liquidityLimit, options.limit, 20)
+    });
     const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
+    const structureEvents = detectStructureEvents({
+        ...options,
+        limit: resolveLimit(options.structureLimit, options.limit, 50)
+    });
     const countStatus = (zones, status) =>
         zones.filter(zone => zone.status === status).length;
 
@@ -1243,6 +1443,7 @@ function getSmartMoneyZones(options = {}) {
         fvgs,
         liquidityZones,
         strongestLiquidity,
+        structureEvents,
         summary: {
             totalOrderBlocks: orderBlocks.length,
             activeOrderBlocks: countStatus(orderBlocks, "ACTIVE"),
@@ -1263,6 +1464,19 @@ function getSmartMoneyZones(options = {}) {
             ).length,
             sellSideLiquidityZones: liquidityZones.filter(
                 zone => zone.type === "SELL_SIDE"
+            ).length,
+            totalStructureEvents: structureEvents.length,
+            bullishBOSEvents: structureEvents.filter(event =>
+                event.label === "BULLISH BOS"
+            ).length,
+            bearishBOSEvents: structureEvents.filter(event =>
+                event.label === "BEARISH BOS"
+            ).length,
+            bullishCHoCHEvents: structureEvents.filter(event =>
+                event.label === "BULLISH CHOCH"
+            ).length,
+            bearishCHoCHEvents: structureEvents.filter(event =>
+                event.label === "BEARISH CHOCH"
             ).length
         }
     };
