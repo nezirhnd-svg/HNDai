@@ -78,6 +78,7 @@ function setupMarketControls() {
 
         currentCoin = selectedCoin;
         activeTrade = null;
+        window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
         initTradingView();
         startEngine();
@@ -95,6 +96,7 @@ function setupMarketControls() {
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
         activeTrade = null;
+        window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
         initTradingView();
         startEngine();
@@ -142,6 +144,39 @@ async function startEngine() {
         }
     } catch (chartError) {
         console.warn("HNDai Chart update failed; the analysis engine will continue.", chartError);
+    }
+
+    try {
+        if (
+            typeof detectStructureEvents === "function" &&
+            typeof detectLiquidityZones === "function" &&
+            typeof getStrongestLiquidityZones === "function" &&
+            window.HNDChartEngine &&
+            typeof window.HNDChartEngine.updateOverlays === "function"
+        ) {
+            const structureEvents = detectStructureEvents({
+                lookback: 3,
+                limit: 20,
+                includeBOS: true,
+                includeCHoCH: true
+            });
+            const liquidityZones = detectLiquidityZones({
+                lookback: 3,
+                tolerance: 0.0015,
+                minTouches: 2,
+                limit: 20,
+                includeSwept: true,
+                includeBroken: false
+            });
+            const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
+
+            window.HNDChartEngine.updateOverlays({
+                structureEvents,
+                strongestLiquidity
+            });
+        }
+    } catch (overlayError) {
+        console.warn("HNDai Chart overlays could not be updated; the analysis engine will continue.", overlayError);
     }
 
     // Canlı fiyat
