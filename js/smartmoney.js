@@ -571,6 +571,313 @@ function detectLiquiditySweep() {
 }
 
 // ==========================
+// Smart Money Zones v2
+// ==========================
+
+function getSmartMoneyCandleData() {
+    return typeof candles !== "undefined" && Array.isArray(candles)
+        ? candles
+        : [];
+}
+
+function isValidSmartMoneyCandle(candle) {
+    return Boolean(candle) &&
+        Number.isFinite(candle.open) &&
+        Number.isFinite(candle.high) &&
+        Number.isFinite(candle.low) &&
+        Number.isFinite(candle.close) &&
+        Number.isFinite(candle.time);
+}
+
+function getLastValidSmartMoneyTime(data) {
+    for (let i = data.length - 1; i >= 0; i--) {
+        if (isValidSmartMoneyCandle(data[i])) {
+            return data[i].time;
+        }
+    }
+
+    return null;
+}
+
+function getSmartMoneyZoneOptions(options = {}) {
+    const requestedLimit = Number.isFinite(options.limit)
+        ? Math.floor(options.limit)
+        : 50;
+
+    return {
+        limit: Math.max(0, requestedLimit),
+        includeInvalidated: options.includeInvalidated !== false
+    };
+}
+
+function applySmartMoneyZoneOptions(zones, options) {
+    const filtered = options.includeInvalidated
+        ? zones
+        : zones.filter(zone => zone.status !== "INVALIDATED");
+
+    return options.limit === 0
+        ? []
+        : filtered.slice(-options.limit);
+}
+
+function detectOrderBlocks(options = {}) {
+    const data = getSmartMoneyCandleData();
+    const normalizedOptions = getSmartMoneyZoneOptions(options);
+    const zones = [];
+    const zoneIds = new Set();
+
+    if (data.length < 2) {
+        return zones;
+    }
+
+    for (let i = 0; i < data.length - 1; i++) {
+        const candle = data[i];
+        const next = data[i + 1];
+
+        if (
+            !isValidSmartMoneyCandle(candle) ||
+            !isValidSmartMoneyCandle(next)
+        ) {
+            continue;
+        }
+
+        let type = null;
+
+        if (
+            candle.close < candle.open &&
+            next.close > candle.high
+        ) {
+            type = "BULLISH";
+        }
+        else if (
+            candle.close > candle.open &&
+            next.close < candle.low
+        ) {
+            type = "BEARISH";
+        }
+
+        if (!type) {
+            continue;
+        }
+
+        const id = `OB-${type}-${candle.time}-${i}`;
+
+        if (zoneIds.has(id)) {
+            continue;
+        }
+
+        zoneIds.add(id);
+
+        const zone = {
+            id,
+            kind: "ORDER_BLOCK",
+            type,
+            index: i,
+            confirmationIndex: i + 1,
+            startTime: candle.time,
+            confirmationTime: next.time,
+            high: candle.high,
+            low: candle.low,
+            midpoint: candle.high / 2 + candle.low / 2,
+            status: "ACTIVE",
+            touches: 0,
+            firstTouchIndex: null,
+            lastInteractionIndex: null,
+            endTime: getLastValidSmartMoneyTime(data)
+        };
+
+        for (let j = zone.confirmationIndex + 1; j < data.length; j++) {
+            const interaction = data[j];
+
+            if (!isValidSmartMoneyCandle(interaction)) {
+                continue;
+            }
+
+            const intersects = interaction.high >= zone.low &&
+                interaction.low <= zone.high;
+
+            if (intersects) {
+                zone.touches++;
+                zone.firstTouchIndex ??= j;
+                zone.lastInteractionIndex = j;
+            }
+
+            const invalidated = type === "BULLISH"
+                ? interaction.close < zone.low
+                : interaction.close > zone.high;
+
+            if (invalidated) {
+                zone.status = "INVALIDATED";
+                zone.endTime = interaction.time;
+                break;
+            }
+
+            const mitigated = type === "BULLISH"
+                ? interaction.low <= zone.midpoint
+                : interaction.high >= zone.midpoint;
+            const touched = type === "BULLISH"
+                ? interaction.low <= zone.high
+                : interaction.high >= zone.low;
+
+            if (mitigated) {
+                zone.status = "MITIGATED";
+            }
+            else if (touched && zone.status === "ACTIVE") {
+                zone.status = "TOUCHED";
+            }
+        }
+
+        zones.push(zone);
+    }
+
+    return applySmartMoneyZoneOptions(zones, normalizedOptions);
+}
+
+function detectFVGs(options = {}) {
+    const data = getSmartMoneyCandleData();
+    const normalizedOptions = getSmartMoneyZoneOptions(options);
+    const zones = [];
+    const zoneIds = new Set();
+
+    if (data.length < 3) {
+        return zones;
+    }
+
+    for (let i = 1; i < data.length - 1; i++) {
+        const c1 = data[i - 1];
+        const c2 = data[i];
+        const c3 = data[i + 1];
+
+        if (
+            !isValidSmartMoneyCandle(c1) ||
+            !isValidSmartMoneyCandle(c2) ||
+            !isValidSmartMoneyCandle(c3)
+        ) {
+            continue;
+        }
+
+        let type = null;
+        let top = null;
+        let bottom = null;
+
+        if (c1.high < c3.low) {
+            type = "BULLISH";
+            top = c3.low;
+            bottom = c1.high;
+        }
+        else if (c1.low > c3.high) {
+            type = "BEARISH";
+            top = c1.low;
+            bottom = c3.high;
+        }
+
+        if (!type) {
+            continue;
+        }
+
+        const id = `FVG-${type}-${c1.time}-${i}`;
+
+        if (zoneIds.has(id)) {
+            continue;
+        }
+
+        zoneIds.add(id);
+
+        const zone = {
+            id,
+            kind: "FVG",
+            type,
+            index: i,
+            confirmationIndex: i + 1,
+            startTime: c1.time,
+            confirmationTime: c3.time,
+            top,
+            bottom,
+            midpoint: top / 2 + bottom / 2,
+            status: "ACTIVE",
+            touches: 0,
+            firstTouchIndex: null,
+            lastInteractionIndex: null,
+            endTime: getLastValidSmartMoneyTime(data)
+        };
+
+        for (let j = zone.confirmationIndex + 1; j < data.length; j++) {
+            const interaction = data[j];
+
+            if (!isValidSmartMoneyCandle(interaction)) {
+                continue;
+            }
+
+            const intersects = interaction.high >= zone.bottom &&
+                interaction.low <= zone.top;
+
+            if (intersects) {
+                zone.touches++;
+                zone.firstTouchIndex ??= j;
+                zone.lastInteractionIndex = j;
+            }
+
+            const invalidated = type === "BULLISH"
+                ? interaction.close < zone.bottom
+                : interaction.close > zone.top;
+
+            if (invalidated) {
+                zone.status = "INVALIDATED";
+                zone.endTime = interaction.time;
+                break;
+            }
+
+            const mitigated = type === "BULLISH"
+                ? interaction.low <= zone.bottom
+                : interaction.high >= zone.top;
+            const touched = type === "BULLISH"
+                ? interaction.low <= zone.top
+                : interaction.high >= zone.bottom;
+
+            if (mitigated) {
+                zone.status = "MITIGATED";
+            }
+            else if (touched && zone.status === "ACTIVE") {
+                zone.status = "TOUCHED";
+            }
+        }
+
+        zones.push(zone);
+    }
+
+    return applySmartMoneyZoneOptions(zones, normalizedOptions);
+}
+
+function getSmartMoneyZones(options = {}) {
+    const data = getSmartMoneyCandleData();
+    const orderBlocks = detectOrderBlocks(options);
+    const fvgs = detectFVGs(options);
+    const countStatus = (zones, status) =>
+        zones.filter(zone => zone.status === status).length;
+
+    return {
+        generatedAt: data.length && isValidSmartMoneyCandle(data[data.length - 1])
+            ? data[data.length - 1].time
+            : null,
+        candleCount: data.length,
+        orderBlocks,
+        fvgs,
+        summary: {
+            totalOrderBlocks: orderBlocks.length,
+            activeOrderBlocks: countStatus(orderBlocks, "ACTIVE"),
+            touchedOrderBlocks: countStatus(orderBlocks, "TOUCHED"),
+            mitigatedOrderBlocks: countStatus(orderBlocks, "MITIGATED"),
+            invalidatedOrderBlocks: countStatus(orderBlocks, "INVALIDATED"),
+            totalFVGs: fvgs.length,
+            activeFVGs: countStatus(fvgs, "ACTIVE"),
+            touchedFVGs: countStatus(fvgs, "TOUCHED"),
+            mitigatedFVGs: countStatus(fvgs, "MITIGATED"),
+            invalidatedFVGs: countStatus(fvgs, "INVALIDATED")
+        }
+    };
+}
+
+// ==========================
 // Draw Order Block
 // ==========================
     
