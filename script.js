@@ -25,6 +25,25 @@ const TIMEFRAME_MAP = {
     "1d": { binance: "1d", tradingView: "D" }
 };
 
+const HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS = Object.freeze({
+    maxEvents: 20,
+    orderBlocksPerEvent: 1,
+    fvgsPerEvent: 1,
+    includeBOS: true,
+    includeCHoCH: true,
+    requireClosedConfirmation: true,
+    atrPeriod: 14,
+    minLegBars: 4,
+    minLegRangeATR: 1.25,
+    minBreakDistanceATR: 0.10,
+    minConfirmationBodyATR: 0.22,
+    minConfirmationBodyRatio: 0.45,
+    minStructureAdvanceATR: 0.08,
+    minOrderBlockHeightATR: 0.12,
+    minFVGHeightATR: 0.06,
+    requireExternalProgression: true
+});
+
 // TradingView
 function initTradingView() {
     if (
@@ -204,14 +223,7 @@ async function startEngine() {
                         orderBlocks: rawOrderBlocks,
                         fvgs: rawFVGs
                     },
-                    {
-                        maxEvents: 20,
-                        orderBlocksPerEvent: 1,
-                        fvgsPerEvent: 1,
-                        includeBOS: true,
-                        includeCHoCH: true,
-                        requireClosedConfirmation: true
-                    }
+                    HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS
                 );
             } catch (qualificationError) {
                 console.warn(
@@ -223,7 +235,18 @@ async function startEngine() {
                 symbol: cycleCoin,
                 interval: cycleInterval,
                 generatedAt: qualifiedPriceZones.generatedAt,
-                summary: { ...qualifiedPriceZones.summary }
+                summary: { ...qualifiedPriceZones.summary },
+                thresholds: {
+                    atrPeriod: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.atrPeriod,
+                    minLegBars: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minLegBars,
+                    minLegRangeATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minLegRangeATR,
+                    minBreakDistanceATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minBreakDistanceATR,
+                    minConfirmationBodyATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minConfirmationBodyATR,
+                    minConfirmationBodyRatio: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minConfirmationBodyRatio,
+                    minStructureAdvanceATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minStructureAdvanceATR,
+                    minOrderBlockHeightATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minOrderBlockHeightATR,
+                    minFVGHeightATR: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minFVGHeightATR
+                }
             };
 
             window.HNDChartEngine.updateOverlays({
