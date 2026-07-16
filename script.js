@@ -179,20 +179,58 @@ async function startEngine() {
                 includeBroken: false
             });
             const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
-            const orderBlocks = detectOrderBlocks({
+            const rawOrderBlocks = detectOrderBlocks({
                 limit: 50,
                 includeInvalidated: true
             });
-            const fvgs = detectFVGs({
+            const rawFVGs = detectFVGs({
                 limit: 50,
                 includeInvalidated: true
             });
+            let qualifiedPriceZones = {
+                generatedAt: null,
+                orderBlocks: [],
+                fvgs: [],
+                summary: {}
+            };
+            try {
+                if (typeof selectStructureConfirmedPriceZones !== "function") {
+                    throw new Error("Structure zone qualifier is unavailable.");
+                }
+                qualifiedPriceZones = selectStructureConfirmedPriceZones(
+                    {
+                        candles: loadedCandles,
+                        structureEvents,
+                        orderBlocks: rawOrderBlocks,
+                        fvgs: rawFVGs
+                    },
+                    {
+                        maxEvents: 20,
+                        orderBlocksPerEvent: 1,
+                        fvgsPerEvent: 1,
+                        includeBOS: true,
+                        includeCHoCH: true,
+                        requireClosedConfirmation: true
+                    }
+                );
+            } catch (qualificationError) {
+                console.warn(
+                    "Structure-confirmed price zones could not be selected; raw zones were suppressed.",
+                    qualificationError
+                );
+            }
+            window.HNDLastStructureQualification = {
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                generatedAt: qualifiedPriceZones.generatedAt,
+                summary: { ...qualifiedPriceZones.summary }
+            };
 
             window.HNDChartEngine.updateOverlays({
                 structureEvents,
                 strongestLiquidity,
-                orderBlocks,
-                fvgs
+                orderBlocks: qualifiedPriceZones.orderBlocks,
+                fvgs: qualifiedPriceZones.fvgs
             });
         }
     } catch (overlayError) {
