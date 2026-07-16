@@ -10,6 +10,7 @@ let hndChartResizeObserver = null;
 let hndChartInitialized = false;
 let hndChartMode = "tradingview";
 let hndChartNeedsFit = true;
+let hndChartNeedsPriceScaleReset = true;
 let hndChartDataCount = 0;
 let hndChartLastError = null;
 let hndChartControlsInitialized = false;
@@ -579,6 +580,88 @@ function initHNDChart() {
     }
 }
 
+function getHNDRightPriceScale() {
+    try {
+        if (
+            hndCandleSeries &&
+            typeof hndCandleSeries.priceScale === "function"
+        ) {
+            const seriesPriceScale = hndCandleSeries.priceScale();
+
+            if (seriesPriceScale) {
+                return seriesPriceScale;
+            }
+        }
+
+        if (
+            hndChart &&
+            typeof hndChart.priceScale === "function"
+        ) {
+            return hndChart.priceScale("right");
+        }
+    } catch (error) {
+        return null;
+    }
+
+    return null;
+}
+
+function resetHNDChartView() {
+    if (!hndChart || !hndCandleSeries) {
+        return false;
+    }
+
+    let priceScaleReset = false;
+    let timeScaleReset = false;
+
+    try {
+        const priceScale = getHNDRightPriceScale();
+
+        if (
+            priceScale &&
+            typeof priceScale.setAutoScale === "function"
+        ) {
+            priceScale.setAutoScale(true);
+            priceScaleReset = true;
+        }
+        else if (
+            priceScale &&
+            typeof priceScale.applyOptions === "function"
+        ) {
+            priceScale.applyOptions({
+                autoScale: true
+            });
+            priceScaleReset = true;
+        }
+    } catch (error) {
+        console.warn(
+            "HNDai Chart price scale could not be reset.",
+            error
+        );
+    }
+
+    try {
+        const timeScale = hndChart.timeScale();
+
+        if (
+            timeScale &&
+            typeof timeScale.fitContent === "function"
+        ) {
+            timeScale.fitContent();
+            timeScaleReset = true;
+        }
+    } catch (error) {
+        console.warn(
+            "HNDai Chart time scale could not be reset.",
+            error
+        );
+    }
+
+    scheduleHNDOverlayRender();
+
+    return priceScaleReset || timeScaleReset;
+}
+
 function updateHNDChart(sourceCandles) {
     const normalizedCandles = normalizeHNDChartCandles(sourceCandles);
     if (!normalizedCandles.length) {
@@ -592,9 +675,13 @@ function updateHNDChart(sourceCandles) {
         hndCandleSeries.setData(normalizedCandles);
         hndChartLastCandleTime = normalizedCandles[normalizedCandles.length - 1].time;
         hndChartDataCount = normalizedCandles.length;
-        if (hndChartNeedsFit) {
-            hndChart.timeScale().fitContent();
+        if (
+            hndChartNeedsFit ||
+            hndChartNeedsPriceScaleReset
+        ) {
+            resetHNDChartView();
             hndChartNeedsFit = false;
+            hndChartNeedsPriceScaleReset = false;
         }
         hndChartLastError = null;
         hideHNDChartError();
@@ -653,6 +740,7 @@ function setupHNDChartControls() {
 
 function requestHNDChartFit() {
     hndChartNeedsFit = true;
+    hndChartNeedsPriceScaleReset = true;
 }
 
 window.HNDChartEngine = {
@@ -661,6 +749,7 @@ window.HNDChartEngine = {
     setMode: setHNDChartMode,
     setupControls: setupHNDChartControls,
     requestFit: requestHNDChartFit,
+    resetView: resetHNDChartView,
     normalizeCandles: normalizeHNDChartCandles,
     updateOverlays: updateHNDOverlays,
     clearOverlays: clearHNDOverlays,
@@ -675,6 +764,7 @@ window.HNDChartEngine = {
             initialized: hndChartInitialized,
             mode: hndChartMode,
             needsFit: hndChartNeedsFit,
+            priceScaleResetPending: hndChartNeedsPriceScaleReset,
             dataCount: hndChartDataCount,
             lastError: hndChartLastError,
             overlay: {
