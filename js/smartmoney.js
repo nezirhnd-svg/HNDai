@@ -1438,6 +1438,278 @@ function detectStructureEvents(options = {}) {
         : filtered.slice(-normalizedOptions.limit);
 }
 
+function getStructureZoneQualificationOptions(options = {}) {
+    const safeInteger = (value, fallback) => Number.isFinite(value)
+        ? Math.max(0, Math.floor(value))
+        : fallback;
+    return {
+        maxEvents: safeInteger(options.maxEvents, 20),
+        orderBlocksPerEvent: safeInteger(options.orderBlocksPerEvent, 1),
+        fvgsPerEvent: safeInteger(options.fvgsPerEvent, 1),
+        includeBOS: options.includeBOS !== false,
+        includeCHoCH: options.includeCHoCH !== false,
+        requireClosedConfirmation: options.requireClosedConfirmation !== false
+    };
+}
+
+function isClosedSmartMoneyCandle(candle, index, dataLength, now = Date.now()) {
+    if (!isValidSmartMoneyCandle(candle)) return false;
+    if (Number.isFinite(candle.closeTime) && candle.closeTime > 0) {
+        return candle.closeTime <= now;
+    }
+    return Number.isInteger(index) && index >= 0 && index < dataLength - 1;
+}
+
+function normalizeStructureEventForZoneQualification(
+    event,
+    data,
+    now,
+    requireClosedConfirmation
+) {
+    if (
+        !event || typeof event.id !== "string" || !event.id ||
+        event.kind !== "STRUCTURE_EVENT" ||
+        !["BOS", "CHOCH"].includes(event.eventType) ||
+        !["BULLISH", "BEARISH"].includes(event.direction) ||
+        !Number.isInteger(event.swingIndex) ||
+        !Number.isInteger(event.swingConfirmationIndex) ||
+        !Number.isInteger(event.confirmationIndex) ||
+        event.swingConfirmationIndex < 0 || event.confirmationIndex < 0 ||
+        event.swingConfirmationIndex >= data.length ||
+        event.confirmationIndex >= data.length ||
+        event.confirmationIndex <= event.swingConfirmationIndex ||
+        !isValidSmartMoneyCandle(data[event.confirmationIndex]) ||
+        !Number.isFinite(event.confirmationTime) || event.confirmationTime <= 0 ||
+        !Number.isFinite(event.level) || event.level <= 0
+    ) return null;
+    if (requireClosedConfirmation && !isClosedSmartMoneyCandle(
+        data[event.confirmationIndex], event.confirmationIndex, data.length, now
+    )) return null;
+    return { ...event };
+}
+
+function getConfirmedStructureImpulseLeg(event, previousEvent, data) {
+    if (!event || !Array.isArray(data)) return null;
+    const previousConfirmationBoundary = previousEvent
+        ? previousEvent.confirmationIndex + 1
+        : 0;
+    const searchStartIndex = Math.max(
+        previousConfirmationBoundary,
+        event.swingConfirmationIndex
+    );
+    const searchEndIndex = event.confirmationIndex;
+    if (!Number.isInteger(searchStartIndex) || !Number.isInteger(searchEndIndex) ||
+        searchStartIndex < 0 || searchEndIndex >= data.length ||
+        searchStartIndex > searchEndIndex) return null;
+    let legStartIndex = null;
+    for (let index = searchStartIndex; index <= searchEndIndex; index++) {
+        if (!isValidSmartMoneyCandle(data[index])) continue;
+        if (legStartIndex === null ||
+            (event.direction === "BULLISH" && data[index].low <= data[legStartIndex].low) ||
+            (event.direction === "BEARISH" && data[index].high >= data[legStartIndex].high)) {
+            legStartIndex = index;
+        }
+    }
+    if (legStartIndex === null || !isValidSmartMoneyCandle(data[searchEndIndex])) return null;
+    const originPrice = event.direction === "BULLISH"
+        ? data[legStartIndex].low
+        : data[legStartIndex].high;
+    const result = {
+        direction: event.direction,
+        eventId: event.id,
+        eventType: event.eventType,
+        legStartIndex,
+        legEndIndex: searchEndIndex,
+        legStartTime: data[legStartIndex].time,
+        legEndTime: data[searchEndIndex].time,
+        originPrice,
+        breakLevel: event.level,
+        confirmationClose: data[searchEndIndex].close
+    };
+    return Object.values({
+        legStartIndex: result.legStartIndex,
+        legEndIndex: result.legEndIndex,
+        legStartTime: result.legStartTime,
+        legEndTime: result.legEndTime,
+        originPrice: result.originPrice,
+        breakLevel: result.breakLevel,
+        confirmationClose: result.confirmationClose
+    }).every(Number.isFinite) ? result : null;
+}
+
+function isPriceZoneInsideConfirmedStructureLeg(zone, event, leg, expectedKind) {
+    return Boolean(
+        zone && event && leg && zone.kind === expectedKind &&
+        zone.type === event.direction &&
+        Number.isInteger(zone.index) && Number.isInteger(zone.confirmationIndex) &&
+        zone.index >= leg.legStartIndex &&
+        zone.confirmationIndex >= leg.legStartIndex &&
+        zone.index <= event.confirmationIndex &&
+        zone.confirmationIndex <= event.confirmationIndex &&
+        Number.isFinite(zone.startTime) && zone.startTime <= event.confirmationTime &&
+        Number.isFinite(zone.confirmationTime) &&
+        zone.confirmationTime <= event.confirmationTime
+    );
+}
+
+function selectOrderBlocksForConfirmedLeg(orderBlocks, event, leg, data, limit) {
+    if (!Array.isArray(orderBlocks) || !Number.isInteger(limit) || limit <= 0) return [];
+    return orderBlocks
+        .filter(zone => isPriceZoneInsideConfirmedStructureLeg(
+            zone, event, leg, "ORDER_BLOCK"
+        ))
+        .map(zone => {
+            const boundary = event.direction === "BULLISH" ? zone.low : zone.high;
+            const displacement = event.direction === "BULLISH"
+                ? (event.confirmationClose - zone.low) / zone.low * 100
+                : (zone.high - event.confirmationClose) / zone.high * 100;
+            return {
+                zone,
+                originDistance: Math.abs(zone.index - leg.legStartIndex),
+                displacementPercent: Number.isFinite(boundary) && boundary > 0 &&
+                    Number.isFinite(displacement) ? displacement : 0
+            };
+        })
+        .sort((a, b) =>
+            a.originDistance - b.originDistance ||
+            b.displacementPercent - a.displacementPercent ||
+            a.zone.confirmationIndex - b.zone.confirmationIndex ||
+            a.zone.index - b.zone.index ||
+            a.zone.id.localeCompare(b.zone.id)
+        )
+        .slice(0, limit)
+        .map(candidate => ({ ...candidate.zone }));
+}
+
+function selectFVGsForConfirmedLeg(fvgs, event, leg, data, limit) {
+    if (!Array.isArray(fvgs) || !Number.isInteger(limit) || limit <= 0) return [];
+    return fvgs
+        .filter(zone => isPriceZoneInsideConfirmedStructureLeg(
+            zone, event, leg, "FVG"
+        ))
+        .map(zone => {
+            const gapSize = zone.top - zone.bottom;
+            const gapPercent = gapSize / zone.midpoint * 100;
+            return {
+                zone,
+                gapPercent: Number.isFinite(gapPercent) ? gapPercent : 0,
+                originDistance: Math.abs(zone.index - leg.legStartIndex)
+            };
+        })
+        .sort((a, b) =>
+            b.gapPercent - a.gapPercent ||
+            a.originDistance - b.originDistance ||
+            a.zone.confirmationIndex - b.zone.confirmationIndex ||
+            a.zone.id.localeCompare(b.zone.id)
+        )
+        .slice(0, limit)
+        .map(candidate => ({ ...candidate.zone }));
+}
+
+function selectStructureConfirmedPriceZones(source = {}, options = {}) {
+    const normalizedOptions = getStructureZoneQualificationOptions(options);
+    const data = Array.isArray(source.candles)
+        ? source.candles.slice()
+        : getSmartMoneyCandleData().slice();
+    const rawEvents = Array.isArray(source.structureEvents)
+        ? source.structureEvents.slice() : [];
+    const rawOrderBlocks = Array.isArray(source.orderBlocks)
+        ? source.orderBlocks.slice() : [];
+    const rawFVGs = Array.isArray(source.fvgs) ? source.fvgs.slice() : [];
+    const now = Number.isFinite(options.now) ? options.now : Date.now();
+    const eventMap = new Map();
+    rawEvents.forEach(event => {
+        const normalized = normalizeStructureEventForZoneQualification(
+            event, data, now, normalizedOptions.requireClosedConfirmation
+        );
+        if (normalized &&
+            (normalizedOptions.includeBOS || normalized.eventType !== "BOS") &&
+            (normalizedOptions.includeCHoCH || normalized.eventType !== "CHOCH")) {
+            eventMap.set(normalized.id, normalized);
+        }
+    });
+    const confirmedEvents = [...eventMap.values()].sort((a, b) =>
+        a.confirmationIndex - b.confirmationIndex ||
+        a.swingConfirmationIndex - b.swingConfirmationIndex ||
+        a.id.localeCompare(b.id)
+    );
+    const selectedEvents = normalizedOptions.maxEvents === 0
+        ? []
+        : confirmedEvents.slice(-normalizedOptions.maxEvents);
+    const selectedOrderBlocks = [];
+    const selectedFVGs = [];
+    const legs = [];
+    const orderBlockIds = new Set();
+    const fvgIds = new Set();
+    let previousEvent = null;
+    selectedEvents.forEach(event => {
+        const leg = getConfirmedStructureImpulseLeg(event, previousEvent, data);
+        previousEvent = event;
+        if (!leg) return;
+        legs.push({ ...leg });
+        const availableOrderBlocks = rawOrderBlocks.filter(zone =>
+            !orderBlockIds.has(zone?.id)
+        );
+        const availableFVGs = rawFVGs.filter(zone => !fvgIds.has(zone?.id));
+        selectOrderBlocksForConfirmedLeg(
+            availableOrderBlocks, event, leg, data,
+            normalizedOptions.orderBlocksPerEvent
+        ).forEach(zone => {
+            if (orderBlockIds.has(zone.id)) return;
+            orderBlockIds.add(zone.id);
+            selectedOrderBlocks.push(addStructureQualificationMetadata(zone, event, leg));
+        });
+        selectFVGsForConfirmedLeg(
+            availableFVGs, event, leg, data, normalizedOptions.fvgsPerEvent
+        ).forEach(zone => {
+            if (fvgIds.has(zone.id)) return;
+            fvgIds.add(zone.id);
+            selectedFVGs.push(addStructureQualificationMetadata(zone, event, leg));
+        });
+    });
+    const sortQualified = (a, b) =>
+        a.structureConfirmationIndex - b.structureConfirmationIndex ||
+        a.structureLegStartIndex - b.structureLegStartIndex ||
+        a.confirmationIndex - b.confirmationIndex ||
+        a.id.localeCompare(b.id);
+    selectedOrderBlocks.sort(sortQualified);
+    selectedFVGs.sort(sortQualified);
+    return {
+        generatedAt: getLastValidSmartMoneyTime(data),
+        orderBlocks: selectedOrderBlocks,
+        fvgs: selectedFVGs,
+        structureEvents: selectedEvents.map(event => ({ ...event })),
+        legs,
+        summary: {
+            sourceOrderBlocks: rawOrderBlocks.length,
+            sourceFVGs: rawFVGs.length,
+            sourceStructureEvents: rawEvents.length,
+            confirmedStructureEvents: selectedEvents.length,
+            qualifiedOrderBlocks: selectedOrderBlocks.length,
+            qualifiedFVGs: selectedFVGs.length,
+            suppressedOrderBlocks: Math.max(0, rawOrderBlocks.length - selectedOrderBlocks.length),
+            suppressedFVGs: Math.max(0, rawFVGs.length - selectedFVGs.length)
+        }
+    };
+}
+
+function addStructureQualificationMetadata(zone, event, leg) {
+    return {
+        ...zone,
+        structureQualified: true,
+        structureEventId: event.id,
+        structureEventType: event.eventType,
+        structureDirection: event.direction,
+        structureConfirmationIndex: event.confirmationIndex,
+        structureConfirmationTime: event.confirmationTime,
+        structureLegStartIndex: leg.legStartIndex,
+        structureLegStartTime: leg.legStartTime,
+        structureLegEndIndex: leg.legEndIndex,
+        structureLegEndTime: leg.legEndTime,
+        qualificationReason: "CONFIRMED_STRUCTURE_IMPULSE"
+    };
+}
+
 function getSmartMoneyZones(options = {}) {
     const data = getSmartMoneyCandleData();
     const resolveLimit = (specificLimit, sharedLimit, defaultLimit) =>
@@ -1558,6 +1830,10 @@ function drawLiquiditySweep() {
 
 console.log("HNDai SmartMoney v5 Ready");
 
+window.HNDSmartMoney = {
+    ...(window.HNDSmartMoney || {}),
+    selectStructureConfirmedPriceZones
+};
 
 window.SM_LOADED = true;
 
