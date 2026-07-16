@@ -5,11 +5,17 @@
 let candles = [];
 let currentPrice = 0;
 
-// Binance mum verisi
-async function fetchCandles(symbol, interval) {
+async function fetchCandlesSnapshot(symbol, interval, limit = 500, options = {}) {
+    const safeLimit = Math.min(1000, Math.max(1,
+        Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 500
+    ));
+    const requestOptions = options.signal ? { signal: options.signal } : {};
+
     try {
         const res = await fetch(
-            `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=500`
+            `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}` +
+            `&interval=${encodeURIComponent(interval)}&limit=${safeLimit}`,
+            requestOptions
         );
 
         if (!res.ok) {
@@ -17,12 +23,10 @@ async function fetchCandles(symbol, interval) {
         }
 
         const data = await res.json();
-
         if (!Array.isArray(data) || data.length === 0) {
             throw new Error("Invalid candles response: expected a non-empty array");
         }
-
-        if (!data.every(c => Array.isArray(c) && c.length >= 6)) {
+        if (!data.every(c => Array.isArray(c) && c.length >= 7)) {
             throw new Error("Invalid candles response: missing candle fields");
         }
 
@@ -32,31 +36,41 @@ async function fetchCandles(symbol, interval) {
             high: Number(c[2]),
             low: Number(c[3]),
             close: Number(c[4]),
-            volume: Number(c[5])
+            volume: Number(c[5]),
+            closeTime: Number(c[6])
         }));
-
         const candlesAreValid = parsedCandles.every(c =>
-            Number.isFinite(c.time) &&
-            Number.isFinite(c.open) &&
-            Number.isFinite(c.high) &&
-            Number.isFinite(c.low) &&
-            Number.isFinite(c.close) &&
-            Number.isFinite(c.volume)
+            Number.isFinite(c.time) && Number.isFinite(c.open) &&
+            Number.isFinite(c.high) && Number.isFinite(c.low) &&
+            Number.isFinite(c.close) && Number.isFinite(c.volume) &&
+            Number.isFinite(c.closeTime)
         );
-
         if (!candlesAreValid) {
             throw new Error("Invalid candles response: non-finite numeric value");
         }
 
-        candles = parsedCandles;
-
-        return candles;
-
+        return parsedCandles;
     } catch (err) {
-        candles = [];
-        console.error("Candles Error: candle data rejected; engine cycle stopped.", err);
+        if (err?.name !== "AbortError" && !options.silent) {
+            console.error("Candles Snapshot Error: candle data rejected.", err);
+        }
         return null;
     }
+}
+
+// Binance mum verisi
+async function fetchCandles(symbol, interval) {
+    const parsedCandles = await fetchCandlesSnapshot(symbol, interval, 500, { silent: true });
+    if (!Array.isArray(parsedCandles)) {
+        candles = [];
+        console.error(
+            "Candles Error: candle data rejected; engine cycle stopped.",
+            new Error("Invalid candles response")
+        );
+        return null;
+    }
+    candles = parsedCandles;
+    return candles;
 }
 
 // Canlı fiyat
@@ -106,3 +120,8 @@ function getLowPrices() {
 function getVolumes() {
     return candles.map(candle => candle.volume);
 }
+
+window.HNDAPI = {
+    ...(window.HNDAPI || {}),
+    fetchCandlesSnapshot
+};
