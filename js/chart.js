@@ -16,6 +16,7 @@ let hndChartLastError = null;
 let hndChartControlsInitialized = false;
 let hndChartResizeHandler = null;
 let hndChartLastCandleTime = null;
+let hndChartLastCandleClose = null;
 let hndOverlayCanvas = null;
 let hndOverlayContext = null;
 let hndOverlayData = null;
@@ -26,10 +27,19 @@ const HND_STRUCTURE_LABEL_LIMIT = 8;
 const HND_STRUCTURE_CLUSTER_X = 56;
 const HND_STRUCTURE_CLUSTER_Y = 10;
 const HND_STRUCTURE_LABEL_GAP = 6;
+const HND_OB_DISPLAY_LIMIT = 6;
+const HND_FVG_DISPLAY_LIMIT = 6;
+const HND_ZONE_DIRECTION_LIMIT = 3;
+const HND_ZONE_LABEL_LIMIT = 6;
+const HND_ZONE_MIN_PIXEL_HEIGHT = 2;
+const HND_ZONE_LABEL_GAP = 5;
 let hndOverlayLastRenderStats = {
     structureEvents: 0,
     structureLabels: 0,
-    liquidityZones: 0
+    liquidityZones: 0,
+    orderBlocks: 0,
+    fvgZones: 0,
+    priceZoneLabels: 0
 };
 
 function setHNDChartText(id, value) {
@@ -86,6 +96,48 @@ function normalizeHNDOverlayTime(value) {
     return Number.isFinite(value) && value > 0
         ? Math.floor(value / 1000)
         : null;
+}
+
+function normalizeHNDPriceZone(zone, expectedKind) {
+    if (
+        !zone || typeof zone.id !== "string" || !zone.id ||
+        zone.kind !== expectedKind ||
+        !["ORDER_BLOCK", "FVG"].includes(expectedKind) ||
+        !["BULLISH", "BEARISH"].includes(zone.type) ||
+        !["ACTIVE", "TOUCHED", "MITIGATED", "INVALIDATED"].includes(zone.status) ||
+        !Number.isFinite(zone.touches) || zone.touches < 0
+    ) return null;
+    const top = expectedKind === "ORDER_BLOCK" ? zone.high : zone.top;
+    const bottom = expectedKind === "ORDER_BLOCK" ? zone.low : zone.bottom;
+    if (!Number.isFinite(top) || top <= 0 || !Number.isFinite(bottom) ||
+        bottom <= 0 || top < bottom) return null;
+    const startTime = normalizeHNDOverlayTime(zone.startTime);
+    const confirmationTime = normalizeHNDOverlayTime(zone.confirmationTime);
+    if (startTime === null || (zone.confirmationTime != null && confirmationTime === null)) return null;
+    const normalizeOptionalTime = value => value == null
+        ? null
+        : normalizeHNDOverlayTime(value);
+    const firstTouchTime = normalizeOptionalTime(zone.firstTouchTime);
+    const mitigationTime = normalizeOptionalTime(zone.mitigationTime);
+    const invalidationTime = normalizeOptionalTime(zone.invalidationTime);
+    const endTime = normalizeOptionalTime(zone.endTime);
+    if (
+        (zone.firstTouchTime != null && firstTouchTime === null) ||
+        (zone.mitigationTime != null && mitigationTime === null) ||
+        (zone.invalidationTime != null && invalidationTime === null) ||
+        (zone.endTime != null && endTime === null)
+    ) return null;
+    const midpoint = Number.isFinite(zone.midpoint) && zone.midpoint > 0
+        ? zone.midpoint
+        : (top + bottom) / 2;
+    return {
+        id: zone.id, kind: expectedKind, type: zone.type, status: zone.status,
+        top, bottom, midpoint, startTime, confirmationTime, firstTouchTime,
+        mitigationTime, invalidationTime, endTime, touches: zone.touches,
+        index: Number.isFinite(zone.index) ? zone.index : null,
+        confirmationIndex: Number.isFinite(zone.confirmationIndex)
+            ? zone.confirmationIndex : null
+    };
 }
 
 function normalizeHNDOverlayData(source) {
@@ -159,6 +211,18 @@ function normalizeHNDOverlayData(source) {
     };
 
     const strongest = source?.strongestLiquidity || {};
+    const normalizePriceZones = (zones, expectedKind) => {
+        const zoneMap = new Map();
+        (Array.isArray(zones) ? zones : []).forEach(zone => {
+            const normalized = normalizeHNDPriceZone(zone, expectedKind);
+            if (normalized) zoneMap.set(normalized.id, normalized);
+        });
+        return [...zoneMap.values()].sort((a, b) =>
+            a.startTime - b.startTime ||
+            (a.confirmationTime ?? 0) - (b.confirmationTime ?? 0) ||
+            a.id.localeCompare(b.id)
+        );
+    };
     const seenZones = new Set();
     const uniqueZone = zone => {
         const normalized = normalizeZone(zone);
@@ -172,6 +236,8 @@ function normalizeHNDOverlayData(source) {
             a.endTime - b.endTime || a.startTime - b.startTime ||
             a.id.localeCompare(b.id)
         ),
+        orderBlocks: normalizePriceZones(source?.orderBlocks, "ORDER_BLOCK"),
+        fvgs: normalizePriceZones(source?.fvgs, "FVG"),
         strongestLiquidity: {
             overall: uniqueZone(strongest.overall),
             buySide: uniqueZone(strongest.buySide),
@@ -397,6 +463,199 @@ function drawHNDStructureEvent(
     }
 }
 
+function getHNDPriceZoneEndTime(zone) {
+    let endTime = null;
+    if (zone?.status === "INVALIDATED") {
+        endTime = zone.invalidationTime ?? zone.endTime ?? hndChartLastCandleTime;
+    } else if (zone?.status === "MITIGATED") {
+        endTime = zone.mitigationTime ?? zone.endTime ?? hndChartLastCandleTime;
+    } else if (zone?.status === "ACTIVE" || zone?.status === "TOUCHED") {
+        endTime = hndChartLastCandleTime ?? zone.endTime;
+    }
+    return Number.isFinite(endTime) && endTime > 0 ? endTime : null;
+}
+
+function getHNDPriceZoneDisplayCandidate(zone, width, height) {
+    try {
+        if (!hndChart || !hndCandleSeries || !zone ||
+            typeof hndChart.timeScale !== "function" ||
+            typeof hndCandleSeries.priceToCoordinate !== "function" ||
+            !Number.isFinite(zone.top) || !Number.isFinite(zone.bottom) ||
+            zone.top <= 0 || zone.bottom <= 0 || zone.top < zone.bottom) return null;
+        const endTime = getHNDPriceZoneEndTime(zone);
+        if (!Number.isFinite(zone.startTime) || endTime === null || endTime < zone.startTime) return null;
+        const timeScale = hndChart.timeScale();
+        const x1 = timeScale.timeToCoordinate(zone.startTime);
+        const x2 = timeScale.timeToCoordinate(endTime);
+        const yTop = hndCandleSeries.priceToCoordinate(zone.top);
+        const yBottom = hndCandleSeries.priceToCoordinate(zone.bottom);
+        if (![x1, x2, yTop, yBottom].every(Number.isFinite)) return null;
+        if (Math.max(x1, x2) < 0 || Math.min(x1, x2) > width) return null;
+        if (Math.max(yTop, yBottom) < 0 || Math.min(yTop, yBottom) > height) return null;
+        const midpointY = (yTop + yBottom) / 2;
+        const calculatedDistance = Number.isFinite(hndChartLastCandleClose) &&
+            hndChartLastCandleClose > 0
+            ? Math.abs(zone.midpoint - hndChartLastCandleClose) /
+                hndChartLastCandleClose * 100
+            : Infinity;
+        return {
+            zone, x1, x2, top: Math.min(yTop, yBottom),
+            bottom: Math.max(yTop, yBottom), midpointY,
+            distancePercent: Number.isFinite(calculatedDistance)
+                ? calculatedDistance : Infinity
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+function getHNDPriceZoneStatusPriority(status) {
+    return { ACTIVE: 4, TOUCHED: 3, MITIGATED: 2, INVALIDATED: 1 }[status] || 0;
+}
+
+function compareHNDPriceZonePriority(first, second) {
+    const firstDistance = Number.isFinite(first.distancePercent)
+        ? first.distancePercent : Number.MAX_VALUE;
+    const secondDistance = Number.isFinite(second.distancePercent)
+        ? second.distancePercent : Number.MAX_VALUE;
+    return getHNDPriceZoneStatusPriority(second.zone.status) -
+        getHNDPriceZoneStatusPriority(first.zone.status) ||
+        firstDistance - secondDistance ||
+        first.zone.touches - second.zone.touches ||
+        second.zone.startTime - first.zone.startTime ||
+        (second.zone.confirmationTime ?? 0) - (first.zone.confirmationTime ?? 0) ||
+        first.zone.id.localeCompare(second.zone.id);
+}
+
+function compareHNDPriceZoneLabelPriority(first, second) {
+    const labelStatus = status => status === "ACTIVE" ? 2 : status === "TOUCHED" ? 1 : 0;
+    const firstDistance = Number.isFinite(first.distancePercent)
+        ? first.distancePercent : Number.MAX_VALUE;
+    const secondDistance = Number.isFinite(second.distancePercent)
+        ? second.distancePercent : Number.MAX_VALUE;
+    return labelStatus(second.zone.status) - labelStatus(first.zone.status) ||
+        firstDistance - secondDistance ||
+        second.zone.startTime - first.zone.startTime ||
+        first.zone.id.localeCompare(second.zone.id);
+}
+
+function selectHNDPriceZonesForDisplay(zones, kind, width, height, totalLimit) {
+    if (!Array.isArray(zones) || !Number.isFinite(totalLimit) || totalLimit <= 0) return [];
+    const candidates = zones
+        .filter(zone => zone?.kind === kind)
+        .map(zone => getHNDPriceZoneDisplayCandidate(zone, width, height))
+        .filter(Boolean)
+        .sort(compareHNDPriceZonePriority);
+    const selected = [];
+    const selectedIds = new Set();
+    ["BULLISH", "BEARISH"].forEach(direction => {
+        candidates.filter(candidate => candidate.zone.type === direction)
+            .slice(0, HND_ZONE_DIRECTION_LIMIT)
+            .forEach(candidate => {
+                if (selected.length < totalLimit && !selectedIds.has(candidate.zone.id)) {
+                    selected.push(candidate);
+                    selectedIds.add(candidate.zone.id);
+                }
+            });
+    });
+    for (const candidate of candidates) {
+        if (selected.length >= totalLimit) break;
+        if (!selectedIds.has(candidate.zone.id)) {
+            selected.push(candidate);
+            selectedIds.add(candidate.zone.id);
+        }
+    }
+    return selected.sort((a, b) =>
+        a.zone.startTime - b.zone.startTime ||
+        (a.zone.confirmationTime ?? 0) - (b.zone.confirmationTime ?? 0) ||
+        a.zone.id.localeCompare(b.zone.id)
+    );
+}
+
+function getHNDPriceZoneStyle(zone) {
+    const colors = zone.kind === "ORDER_BLOCK"
+        ? (zone.type === "BULLISH"
+            ? { border: "#22c55e", rgb: "34, 197, 94" }
+            : { border: "#ef4444", rgb: "239, 68, 68" })
+        : (zone.type === "BULLISH"
+            ? { border: "#38bdf8", rgb: "56, 189, 248" }
+            : { border: "#fb923c", rgb: "251, 146, 60" });
+    const alpha = { ACTIVE: 0.18, TOUCHED: 0.13, MITIGATED: 0.08, INVALIDATED: 0.04 }[zone.status] || 0.04;
+    return {
+        border: colors.border,
+        fill: `rgba(${colors.rgb}, ${alpha})`,
+        dashed: zone.status === "MITIGATED" || zone.status === "INVALIDATED"
+    };
+}
+
+function drawHNDPriceZone(ctx, candidate, width, height, labelRects = [], shouldDrawLabel = true) {
+    try {
+        const { zone } = candidate;
+        const left = Math.max(0, Math.min(width, Math.min(candidate.x1, candidate.x2)));
+        const right = Math.max(0, Math.min(width, Math.max(candidate.x1, candidate.x2)));
+        const top = Math.max(0, Math.min(height, candidate.top));
+        const rawBottom = Math.max(0, Math.min(height, candidate.bottom));
+        const bottom = Math.min(height, Math.max(rawBottom, top + HND_ZONE_MIN_PIXEL_HEIGHT));
+        if (right <= left || bottom <= top) return false;
+        const style = getHNDPriceZoneStyle(zone);
+        ctx.save();
+        ctx.fillStyle = style.fill;
+        ctx.fillRect(left, top, right - left, bottom - top);
+        ctx.strokeStyle = style.border;
+        ctx.lineWidth = 1;
+        ctx.setLineDash(style.dashed ? [5, 4] : []);
+        ctx.beginPath();
+        ctx.moveTo(left, top); ctx.lineTo(right, top);
+        ctx.moveTo(left, bottom); ctx.lineTo(right, bottom);
+        ctx.moveTo(right, top); ctx.lineTo(right, bottom);
+        ctx.stroke();
+        if (zone.kind === "ORDER_BLOCK") {
+            ctx.globalAlpha = 0.45;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.moveTo(left, candidate.midpointY);
+            ctx.lineTo(right, candidate.midpointY); ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+        ctx.setLineDash([]);
+        if (shouldDrawLabel) {
+            const label = `${zone.type === "BULLISH" ? "BULL" : "BEAR"} ` +
+                `${zone.kind === "ORDER_BLOCK" ? "OB" : "FVG"} • ${zone.status}`;
+            ctx.font = "10px Arial";
+            const textWidth = ctx.measureText(label).width;
+            const positions = [
+                { x: left + 4, y: top + 13 },
+                { x: right - textWidth - 4, y: top + 13 }
+            ];
+            for (const position of positions) {
+                const rect = {
+                    left: position.x - 3, top: position.y - 11,
+                    right: position.x + textWidth + 3, bottom: position.y + 3
+                };
+                const inside = rect.left >= 0 && rect.right <= width &&
+                    rect.top >= 0 && rect.bottom <= height;
+                const overlaps = labelRects.some(existing =>
+                    rect.left < existing.right + HND_ZONE_LABEL_GAP &&
+                    rect.right + HND_ZONE_LABEL_GAP > existing.left &&
+                    rect.top < existing.bottom + HND_ZONE_LABEL_GAP &&
+                    rect.bottom + HND_ZONE_LABEL_GAP > existing.top
+                );
+                if (!inside || overlaps) continue;
+                labelRects.push(rect);
+                ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
+                ctx.fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+                ctx.fillStyle = style.border;
+                ctx.fillText(label, position.x, position.y);
+                break;
+            }
+        }
+        ctx.restore();
+        return true;
+    } catch (error) {
+        try { ctx.restore(); } catch (restoreError) { /* noop */ }
+        return false;
+    }
+}
+
 function drawHNDLiquidityZone(ctx, zone, isOverall, width, height) {
     try {
         const endTime = zone.status === "SWEPT"
@@ -464,6 +723,38 @@ function renderHNDOverlays() {
     let structureEvents = 0;
     const labelStats = { count: 0 };
     let liquidityZones = 0;
+    let orderBlocks = 0;
+    let fvgZones = 0;
+    let priceZoneLabels = 0;
+    const labelRects = [];
+    const selectedFVGs = selectHNDPriceZonesForDisplay(
+        hndOverlayData.fvgs, "FVG", width, height, HND_FVG_DISPLAY_LIMIT
+    );
+    const selectedOrderBlocks = selectHNDPriceZonesForDisplay(
+        hndOverlayData.orderBlocks, "ORDER_BLOCK", width, height, HND_OB_DISPLAY_LIMIT
+    );
+    const zoneLabelIds = new Set(
+        [...selectedFVGs, ...selectedOrderBlocks]
+            .sort(compareHNDPriceZoneLabelPriority)
+            .slice(0, HND_ZONE_LABEL_LIMIT)
+            .map(candidate => `${candidate.zone.kind}:${candidate.zone.id}`)
+    );
+    const drawPriceZones = (candidates, counter) => {
+        for (const candidate of candidates) {
+            const beforeLabels = labelRects.length;
+            if (drawHNDPriceZone(
+                hndOverlayContext, candidate, width, height, labelRects,
+                zoneLabelIds.has(`${candidate.zone.kind}:${candidate.zone.id}`)
+            )) counter.count++;
+            if (labelRects.length > beforeLabels) priceZoneLabels++;
+        }
+    };
+    const fvgCounter = { count: 0 };
+    const orderBlockCounter = { count: 0 };
+    drawPriceZones(selectedFVGs, fvgCounter);
+    drawPriceZones(selectedOrderBlocks, orderBlockCounter);
+    fvgZones = fvgCounter.count;
+    orderBlocks = orderBlockCounter.count;
     const strongest = hndOverlayData.strongestLiquidity || {};
     const drawnZones = new Set();
     const zoneEntries = [
@@ -488,7 +779,6 @@ function renderHNDOverlays() {
             .slice(0, HND_STRUCTURE_LABEL_LIMIT)
             .map(candidate => candidate.event.id)
     );
-    const labelRects = [];
     for (const { event } of displayEvents) {
         if (drawHNDStructureEvent(
             hndOverlayContext,
@@ -503,7 +793,10 @@ function renderHNDOverlays() {
     hndOverlayLastRenderStats = {
         structureEvents,
         structureLabels: labelStats.count,
-        liquidityZones
+        liquidityZones,
+        orderBlocks,
+        fvgZones,
+        priceZoneLabels
     };
     return true;
 }
@@ -538,6 +831,8 @@ function updateHNDOverlays(source) {
 function clearHNDOverlays() {
     hndOverlayData = {
         structureEvents: [],
+        orderBlocks: [],
+        fvgs: [],
         strongestLiquidity: { overall: null, buySide: null, sellSide: null }
     };
     clearHNDOverlayCanvas();
@@ -545,7 +840,10 @@ function clearHNDOverlays() {
     hndOverlayLastRenderStats = {
         structureEvents: 0,
         structureLabels: 0,
-        liquidityZones: 0
+        liquidityZones: 0,
+        orderBlocks: 0,
+        fvgZones: 0,
+        priceZoneLabels: 0
     };
 }
 
@@ -745,6 +1043,7 @@ function updateHNDChart(sourceCandles) {
     const normalizedCandles = normalizeHNDChartCandles(sourceCandles);
     if (!normalizedCandles.length) {
         hndChartLastCandleTime = null;
+        hndChartLastCandleClose = null;
         setHNDChartText("hndChartStatus", "No valid chart data");
         return false;
     }
@@ -753,6 +1052,7 @@ function updateHNDChart(sourceCandles) {
     try {
         hndCandleSeries.setData(normalizedCandles);
         hndChartLastCandleTime = normalizedCandles[normalizedCandles.length - 1].time;
+        hndChartLastCandleClose = normalizedCandles[normalizedCandles.length - 1].close;
         hndChartDataCount = normalizedCandles.length;
         if (
             hndChartNeedsFit ||
@@ -850,6 +1150,8 @@ window.HNDChartEngine = {
                 canvasReady: Boolean(hndOverlayCanvas && hndOverlayContext),
                 structureEventCount: hndOverlayData?.structureEvents?.length || 0,
                 liquidityZoneCount: liquidityIds.size,
+                orderBlockCount: hndOverlayData?.orderBlocks?.length || 0,
+                fvgCount: hndOverlayData?.fvgs?.length || 0,
                 lastRenderStats: { ...hndOverlayLastRenderStats },
                 lastCandleTime: hndChartLastCandleTime
             }

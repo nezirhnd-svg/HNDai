@@ -682,6 +682,11 @@ function detectOrderBlocks(options = {}) {
             status: "ACTIVE",
             touches: 0,
             firstTouchIndex: null,
+            firstTouchTime: null,
+            mitigationIndex: null,
+            mitigationTime: null,
+            invalidationIndex: null,
+            invalidationTime: null,
             lastInteractionIndex: null,
             endTime: getLastValidSmartMoneyTime(data)
         };
@@ -698,7 +703,10 @@ function detectOrderBlocks(options = {}) {
 
             if (intersects) {
                 zone.touches++;
-                zone.firstTouchIndex ??= j;
+                if (zone.firstTouchIndex === null) {
+                    zone.firstTouchIndex = j;
+                    zone.firstTouchTime = interaction.time;
+                }
                 zone.lastInteractionIndex = j;
             }
 
@@ -707,6 +715,8 @@ function detectOrderBlocks(options = {}) {
                 : interaction.close > zone.high;
 
             if (invalidated) {
+                zone.invalidationIndex = j;
+                zone.invalidationTime = interaction.time;
                 zone.status = "INVALIDATED";
                 zone.endTime = interaction.time;
                 break;
@@ -720,6 +730,10 @@ function detectOrderBlocks(options = {}) {
                 : interaction.high >= zone.low;
 
             if (mitigated) {
+                if (zone.mitigationIndex === null) {
+                    zone.mitigationIndex = j;
+                    zone.mitigationTime = interaction.time;
+                }
                 zone.status = "MITIGATED";
             }
             else if (touched && zone.status === "ACTIVE") {
@@ -797,6 +811,11 @@ function detectFVGs(options = {}) {
             status: "ACTIVE",
             touches: 0,
             firstTouchIndex: null,
+            firstTouchTime: null,
+            mitigationIndex: null,
+            mitigationTime: null,
+            invalidationIndex: null,
+            invalidationTime: null,
             lastInteractionIndex: null,
             endTime: getLastValidSmartMoneyTime(data)
         };
@@ -813,7 +832,10 @@ function detectFVGs(options = {}) {
 
             if (intersects) {
                 zone.touches++;
-                zone.firstTouchIndex ??= j;
+                if (zone.firstTouchIndex === null) {
+                    zone.firstTouchIndex = j;
+                    zone.firstTouchTime = interaction.time;
+                }
                 zone.lastInteractionIndex = j;
             }
 
@@ -822,6 +844,8 @@ function detectFVGs(options = {}) {
                 : interaction.close > zone.top;
 
             if (invalidated) {
+                zone.invalidationIndex = j;
+                zone.invalidationTime = interaction.time;
                 zone.status = "INVALIDATED";
                 zone.endTime = interaction.time;
                 break;
@@ -835,6 +859,10 @@ function detectFVGs(options = {}) {
                 : interaction.high >= zone.bottom;
 
             if (mitigated) {
+                if (zone.mitigationIndex === null) {
+                    zone.mitigationIndex = j;
+                    zone.mitigationTime = interaction.time;
+                }
                 zone.status = "MITIGATED";
             }
             else if (touched && zone.status === "ACTIVE") {
