@@ -21,6 +21,11 @@ let hndOverlayContext = null;
 let hndOverlayData = null;
 let hndOverlayAnimationFrame = null;
 let hndOverlaySubscriptionsInitialized = false;
+const HND_STRUCTURE_DISPLAY_LIMIT = 10;
+const HND_STRUCTURE_LABEL_LIMIT = 8;
+const HND_STRUCTURE_CLUSTER_X = 56;
+const HND_STRUCTURE_CLUSTER_Y = 10;
+const HND_STRUCTURE_LABEL_GAP = 6;
 let hndOverlayLastRenderStats = {
     structureEvents: 0,
     structureLabels: 0,
@@ -243,7 +248,76 @@ function getHNDOverlayCoordinate(value, maximum) {
         : null;
 }
 
-function drawHNDStructureEvent(ctx, event, width, height, labelRects = [], labelStats = null) {
+function getHNDStructureDisplayCandidate(event, width, height) {
+    try {
+        const x1 = hndChart.timeScale().timeToCoordinate(event.startTime);
+        const x2 = hndChart.timeScale().timeToCoordinate(event.endTime);
+        const y = hndCandleSeries.priceToCoordinate(event.level);
+        if (![x1, x2, y].every(Number.isFinite)) return null;
+        if (Math.max(x1, x2) < 0 || Math.min(x1, x2) > width) return null;
+        if (y < 0 || y > height) return null;
+        return { event, x1, x2, y };
+    } catch (error) {
+        return null;
+    }
+}
+
+function getHNDStructurePriority(candidate) {
+    return {
+        type: candidate.event.eventType === "CHOCH" ? 1 : 0,
+        endTime: candidate.event.endTime,
+        startTime: candidate.event.startTime,
+        id: candidate.event.id
+    };
+}
+
+function compareHNDStructurePriority(first, second) {
+    const firstPriority = getHNDStructurePriority(first);
+    const secondPriority = getHNDStructurePriority(second);
+    return secondPriority.type - firstPriority.type ||
+        secondPriority.endTime - firstPriority.endTime ||
+        secondPriority.startTime - firstPriority.startTime ||
+        firstPriority.id.localeCompare(secondPriority.id);
+}
+
+function areHNDStructureEventsNear(first, second) {
+    return first.event.direction === second.event.direction &&
+        Math.abs(first.x2 - second.x2) < HND_STRUCTURE_CLUSTER_X &&
+        Math.abs(first.y - second.y) < HND_STRUCTURE_CLUSTER_Y;
+}
+
+function selectHNDStructureEventsForDisplay(events, width, height) {
+    if (!Array.isArray(events)) return [];
+    const candidates = events
+        .map(event => getHNDStructureDisplayCandidate(event, width, height))
+        .filter(Boolean)
+        .sort(compareHNDStructurePriority);
+    const selected = [];
+
+    for (const candidate of candidates) {
+        if (selected.some(existing => areHNDStructureEventsNear(existing, candidate))) {
+            continue;
+        }
+        selected.push(candidate);
+        if (selected.length >= HND_STRUCTURE_DISPLAY_LIMIT) break;
+    }
+
+    return selected.sort((first, second) =>
+        first.event.endTime - second.event.endTime ||
+        first.event.startTime - second.event.startTime ||
+        first.event.id.localeCompare(second.event.id)
+    );
+}
+
+function drawHNDStructureEvent(
+    ctx,
+    event,
+    width,
+    height,
+    labelRects = [],
+    labelStats = null,
+    shouldDrawLabel = true
+) {
     try {
         const x1Raw = hndChart.timeScale().timeToCoordinate(event.startTime);
         const x2Raw = hndChart.timeScale().timeToCoordinate(event.endTime);
@@ -265,11 +339,22 @@ function drawHNDStructureEvent(ctx, event, width, height, labelRects = [], label
         ctx.setLineDash(event.eventType === "CHOCH" ? [8, 4] : [5, 4]);
         ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
         ctx.setLineDash([]);
+        if (!shouldDrawLabel) {
+            ctx.restore();
+            return true;
+        }
         ctx.font = "11px Arial";
         const text = event.label;
         const textWidth = ctx.measureText(text).width;
-        const labelX = Math.max(3, Math.min(width - textWidth - 5, right - textWidth));
-        const offsets = [0, -16, 16, -32, 32, -48, 48];
+        const rightLabelX = x2Raw + 8;
+        const leftLabelX = x2Raw - textWidth - 8;
+        const labelX = Math.max(3, Math.min(
+            width - textWidth - 5,
+            rightLabelX + textWidth + 5 <= width ? rightLabelX : leftLabelX
+        ));
+        const offsets = event.direction === "BULLISH"
+            ? [-18, -34, -50, 18, 34, 50]
+            : [20, 36, 52, -18, -34, -50];
         let labelRect = null;
 
         for (const offset of offsets) {
@@ -284,8 +369,10 @@ function drawHNDStructureEvent(ctx, event, width, height, labelRects = [], label
             const inside = candidate.left >= 0 && candidate.right <= width &&
                 candidate.top >= 0 && candidate.bottom <= height;
             const overlaps = labelRects.some(rect =>
-                candidate.left < rect.right + 4 && candidate.right + 4 > rect.left &&
-                candidate.top < rect.bottom + 4 && candidate.bottom + 4 > rect.top
+                candidate.left < rect.right + HND_STRUCTURE_LABEL_GAP &&
+                candidate.right + HND_STRUCTURE_LABEL_GAP > rect.left &&
+                candidate.top < rect.bottom + HND_STRUCTURE_LABEL_GAP &&
+                candidate.bottom + HND_STRUCTURE_LABEL_GAP > rect.top
             );
             if (inside && !overlaps) {
                 labelRect = candidate;
@@ -390,35 +477,27 @@ function renderHNDOverlays() {
         drawnZones.add(zone.id);
         if (drawHNDLiquidityZone(hndOverlayContext, zone, isOverall, width, height)) liquidityZones++;
     }
-    const visibleEvents = hndOverlayData.structureEvents.slice(-20)
-        .map(event => ({
-            event,
-            x2: hndChart.timeScale().timeToCoordinate(event.endTime),
-            y: hndCandleSeries.priceToCoordinate(event.level)
-        }))
-        .filter(item => Number.isFinite(item.x2) && Number.isFinite(item.y));
-    const displayEvents = [];
-
-    for (let i = visibleEvents.length - 1; i >= 0; i--) {
-        const candidate = visibleEvents[i];
-        const duplicate = displayEvents.some(existing =>
-            existing.event.eventType === candidate.event.eventType &&
-            existing.event.direction === candidate.event.direction &&
-            Math.abs(existing.y - candidate.y) < 4 &&
-            Math.abs(existing.x2 - candidate.x2) < 12
-        );
-        if (!duplicate) displayEvents.push(candidate);
-    }
-
-    displayEvents.sort((a, b) =>
-        (a.event.eventType === "CHOCH" ? 0 : 1) -
-        (b.event.eventType === "CHOCH" ? 0 : 1) ||
-        b.event.endTime - a.event.endTime
+    const displayEvents = selectHNDStructureEventsForDisplay(
+        hndOverlayData.structureEvents,
+        width,
+        height
+    );
+    const labelEventIds = new Set(
+        [...displayEvents]
+            .sort(compareHNDStructurePriority)
+            .slice(0, HND_STRUCTURE_LABEL_LIMIT)
+            .map(candidate => candidate.event.id)
     );
     const labelRects = [];
     for (const { event } of displayEvents) {
         if (drawHNDStructureEvent(
-            hndOverlayContext, event, width, height, labelRects, labelStats
+            hndOverlayContext,
+            event,
+            width,
+            height,
+            labelRects,
+            labelStats,
+            labelEventIds.has(event.id)
         )) structureEvents++;
     }
     hndOverlayLastRenderStats = {
