@@ -159,6 +159,8 @@ async function startEngine() {
             typeof detectStructureEvents === "function" &&
             typeof detectLiquidityZones === "function" &&
             typeof getStrongestLiquidityZones === "function" &&
+            typeof detectOrderBlocks === "function" &&
+            typeof detectFVGs === "function" &&
             window.HNDChartEngine &&
             typeof window.HNDChartEngine.updateOverlays === "function"
         ) {
@@ -177,10 +179,20 @@ async function startEngine() {
                 includeBroken: false
             });
             const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
+            const orderBlocks = detectOrderBlocks({
+                limit: 50,
+                includeInvalidated: true
+            });
+            const fvgs = detectFVGs({
+                limit: 50,
+                includeInvalidated: true
+            });
 
             window.HNDChartEngine.updateOverlays({
                 structureEvents,
-                strongestLiquidity
+                strongestLiquidity,
+                orderBlocks,
+                fvgs
             });
         }
     } catch (overlayError) {
