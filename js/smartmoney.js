@@ -1442,13 +1442,27 @@ function getStructureZoneQualificationOptions(options = {}) {
     const safeInteger = (value, fallback) => Number.isFinite(value)
         ? Math.max(0, Math.floor(value))
         : fallback;
+    const safePositiveInteger = (value, fallback) =>
+        Number.isInteger(value) && value > 0 ? value : fallback;
+    const safeThreshold = (value, fallback) =>
+        Number.isFinite(value) && value >= 0 ? value : fallback;
     return {
         maxEvents: safeInteger(options.maxEvents, 20),
         orderBlocksPerEvent: safeInteger(options.orderBlocksPerEvent, 1),
         fvgsPerEvent: safeInteger(options.fvgsPerEvent, 1),
         includeBOS: options.includeBOS !== false,
         includeCHoCH: options.includeCHoCH !== false,
-        requireClosedConfirmation: options.requireClosedConfirmation !== false
+        requireClosedConfirmation: options.requireClosedConfirmation !== false,
+        atrPeriod: safePositiveInteger(options.atrPeriod, 14),
+        minLegBars: safePositiveInteger(options.minLegBars, 4),
+        minLegRangeATR: safeThreshold(options.minLegRangeATR, 1.25),
+        minBreakDistanceATR: safeThreshold(options.minBreakDistanceATR, 0.10),
+        minConfirmationBodyATR: safeThreshold(options.minConfirmationBodyATR, 0.22),
+        minConfirmationBodyRatio: safeThreshold(options.minConfirmationBodyRatio, 0.45),
+        minStructureAdvanceATR: safeThreshold(options.minStructureAdvanceATR, 0.08),
+        minOrderBlockHeightATR: safeThreshold(options.minOrderBlockHeightATR, 0.12),
+        minFVGHeightATR: safeThreshold(options.minFVGHeightATR, 0.06),
+        requireExternalProgression: options.requireExternalProgression !== false
     };
 }
 
@@ -1552,12 +1566,206 @@ function isPriceZoneInsideConfirmedStructureLeg(zone, event, leg, expectedKind) 
     );
 }
 
-function selectOrderBlocksForConfirmedLeg(orderBlocks, event, leg, data, limit) {
+function calculateSmartMoneyTrueRange(candle, previousCandle) {
+    if (!isValidSmartMoneyCandle(candle)) return null;
+    const baseRange = candle.high - candle.low;
+    if (!isValidSmartMoneyCandle(previousCandle)) {
+        return Number.isFinite(baseRange) && baseRange >= 0 ? baseRange : null;
+    }
+    const trueRange = Math.max(
+        baseRange,
+        Math.abs(candle.high - previousCandle.close),
+        Math.abs(candle.low - previousCandle.close)
+    );
+    return Number.isFinite(trueRange) && trueRange >= 0 ? trueRange : null;
+}
+
+function calculateStructureATR(data, confirmationIndex, period = 14) {
+    if (!Array.isArray(data) || !Number.isInteger(confirmationIndex) ||
+        confirmationIndex < 0 || confirmationIndex >= data.length ||
+        !Number.isInteger(period) || period <= 0) return null;
+    const ranges = [];
+    let previousValidCandle = null;
+    for (let index = 0; index <= confirmationIndex; index++) {
+        const candle = data[index];
+        if (!isValidSmartMoneyCandle(candle)) continue;
+        const trueRange = calculateSmartMoneyTrueRange(candle, previousValidCandle);
+        if (Number.isFinite(trueRange)) ranges.push(trueRange);
+        previousValidCandle = candle;
+    }
+    if (ranges.length < 2) return null;
+    const recent = ranges.slice(-period);
+    const atr = recent.reduce((sum, value) => sum + value, 0) / recent.length;
+    return Number.isFinite(atr) && atr > 0 ? atr : null;
+}
+
+function getStructureEventSignificanceMetrics(event, leg, data, options) {
+    if (!event || !leg || !Array.isArray(data) ||
+        !Number.isInteger(leg.legStartIndex) ||
+        !Number.isInteger(event.confirmationIndex) ||
+        leg.legStartIndex < 0 || event.confirmationIndex >= data.length ||
+        leg.legStartIndex > event.confirmationIndex) return null;
+    const atr = calculateStructureATR(data, event.confirmationIndex, options.atrPeriod);
+    const confirmationCandle = data[event.confirmationIndex];
+    if (!Number.isFinite(atr) || atr <= 0 ||
+        !isValidSmartMoneyCandle(confirmationCandle) ||
+        !Number.isFinite(event.confirmationClose) ||
+        !Number.isFinite(event.level)) return null;
+    const legCandles = data.slice(leg.legStartIndex, event.confirmationIndex + 1)
+        .filter(isValidSmartMoneyCandle);
+    if (!legCandles.length) return null;
+    const legHigh = Math.max(...legCandles.map(candle => candle.high));
+    const legLow = Math.min(...legCandles.map(candle => candle.low));
+    const legRange = legHigh - legLow;
+    const breakDistance = Math.abs(event.confirmationClose - event.level);
+    const confirmationBody = Math.abs(confirmationCandle.close - confirmationCandle.open);
+    const confirmationRange = confirmationCandle.high - confirmationCandle.low;
+    const metrics = {
+        atr,
+        legBars: event.confirmationIndex - leg.legStartIndex + 1,
+        legHigh,
+        legLow,
+        legRange,
+        legRangeATR: legRange / atr,
+        breakDistance,
+        breakDistanceATR: breakDistance / atr,
+        confirmationBody,
+        confirmationBodyATR: confirmationBody / atr,
+        confirmationRange,
+        confirmationBodyRatio: confirmationRange > 0
+            ? confirmationBody / confirmationRange : 0
+    };
+    return Object.values(metrics).every(Number.isFinite) ? metrics : null;
+}
+
+function passesStructureImpulseThresholds(event, metrics, options) {
+    if (!event || !metrics) return false;
+    const directionMatches = event.direction === "BULLISH"
+        ? event.confirmationClose > event.level
+        : event.direction === "BEARISH"
+            ? event.confirmationClose < event.level
+            : false;
+    const strongBody = metrics.confirmationBodyATR >= options.minConfirmationBodyATR &&
+        metrics.confirmationBodyRatio >= options.minConfirmationBodyRatio;
+    const strongBreak = metrics.breakDistanceATR >= options.minBreakDistanceATR * 2;
+    return directionMatches &&
+        metrics.legBars >= options.minLegBars &&
+        metrics.legRangeATR >= options.minLegRangeATR &&
+        metrics.breakDistanceATR >= options.minBreakDistanceATR &&
+        (strongBody || strongBreak);
+}
+
+function passesExternalStructureProgression(event, previousSignificantEvent, metrics, options) {
+    if (!previousSignificantEvent || options.requireExternalProgression === false) return true;
+    if (event.direction !== previousSignificantEvent.direction) {
+        return event.eventType === "CHOCH";
+    }
+    const advance = event.direction === "BULLISH"
+        ? event.level - previousSignificantEvent.level
+        : previousSignificantEvent.level - event.level;
+    return Number.isFinite(advance) &&
+        advance >= metrics.atr * options.minStructureAdvanceATR;
+}
+
+function calculateStructureSignificanceScore(event, metrics, options) {
+    if (!event || !metrics) return 0;
+    const normalized = (value, threshold, maximum) => threshold > 0
+        ? Math.min(maximum, value / threshold * maximum)
+        : (value > 0 ? maximum : 0);
+    const score =
+        normalized(metrics.legRangeATR, options.minLegRangeATR, 35) +
+        normalized(metrics.breakDistanceATR, options.minBreakDistanceATR, 25) +
+        normalized(metrics.confirmationBodyATR, options.minConfirmationBodyATR, 20) +
+        normalized(metrics.confirmationBodyRatio, options.minConfirmationBodyRatio, 10) +
+        normalized(metrics.legBars, options.minLegBars, 10);
+    return Math.min(100, Math.max(0, Math.round(score)));
+}
+
+function selectSignificantStructureEventsForZoneQualification(confirmedEvents, data, options) {
+    const significantEvents = [];
+    const rejectedEvents = [];
+    let previousSignificantEvent = null;
+    for (const event of Array.isArray(confirmedEvents) ? confirmedEvents : []) {
+        const leg = getConfirmedStructureImpulseLeg(event, previousSignificantEvent, data);
+        if (!leg) {
+            rejectedEvents.push(rejectedStructureEvent(event, "INVALID_LEG", null));
+            continue;
+        }
+        const metrics = getStructureEventSignificanceMetrics(event, leg, data, options);
+        if (!metrics) {
+            rejectedEvents.push(rejectedStructureEvent(event, "INVALID_METRICS", null));
+            continue;
+        }
+        let reason = null;
+        if (metrics.legBars < options.minLegBars) reason = "MICRO_LEG_BARS";
+        else if (metrics.legRangeATR < options.minLegRangeATR) reason = "MICRO_LEG_RANGE";
+        else if (metrics.breakDistanceATR < options.minBreakDistanceATR) reason = "WEAK_BREAK_DISTANCE";
+        else {
+            const strongBody = metrics.confirmationBodyATR >= options.minConfirmationBodyATR &&
+                metrics.confirmationBodyRatio >= options.minConfirmationBodyRatio;
+            const strongBreak = metrics.breakDistanceATR >= options.minBreakDistanceATR * 2;
+            if (!strongBody && !strongBreak) reason = "WEAK_CONFIRMATION";
+        }
+        if (!reason && !passesStructureImpulseThresholds(event, metrics, options)) {
+            reason = "WEAK_CONFIRMATION";
+        }
+        if (!reason && previousSignificantEvent &&
+            event.direction !== previousSignificantEvent.direction &&
+            event.eventType !== "CHOCH" && options.requireExternalProgression !== false) {
+            reason = "OPPOSITE_EVENT_NOT_CHOCH";
+        }
+        if (!reason && !passesExternalStructureProgression(
+            event, previousSignificantEvent, metrics, options
+        )) reason = "NON_PROGRESSIVE_INTERNAL_STRUCTURE";
+        if (reason) {
+            rejectedEvents.push(rejectedStructureEvent(event, reason, metrics));
+            continue;
+        }
+        const acceptedEvent = { ...event };
+        significantEvents.push({
+            event: acceptedEvent,
+            leg: { ...leg },
+            metrics: { ...metrics },
+            significanceScore: calculateStructureSignificanceScore(event, metrics, options)
+        });
+        previousSignificantEvent = acceptedEvent;
+    }
+    return { significantEvents, rejectedEvents };
+}
+
+function rejectedStructureEvent(event, reason, metrics) {
+    return {
+        id: event?.id ?? null,
+        eventType: event?.eventType ?? null,
+        direction: event?.direction ?? null,
+        confirmationIndex: event?.confirmationIndex ?? null,
+        reason,
+        metrics: metrics ? { ...metrics } : null
+    };
+}
+
+function getPriceZoneHeightATR(zone, expectedKind, atr) {
+    if (!zone || !Number.isFinite(atr) || atr <= 0) return null;
+    const height = expectedKind === "ORDER_BLOCK"
+        ? zone.high - zone.low
+        : expectedKind === "FVG"
+            ? zone.top - zone.bottom
+            : null;
+    const result = height / atr;
+    return Number.isFinite(result) && result >= 0 ? result : null;
+}
+
+function selectOrderBlocksForConfirmedLeg(orderBlocks, event, leg, data, limit, context = {}) {
     if (!Array.isArray(orderBlocks) || !Number.isInteger(limit) || limit <= 0) return [];
+    const useHeightFilter = Number.isFinite(context.atr) && context.atr > 0 &&
+        Number.isFinite(context.minHeightATR) && context.minHeightATR >= 0;
     return orderBlocks
         .filter(zone => isPriceZoneInsideConfirmedStructureLeg(
             zone, event, leg, "ORDER_BLOCK"
         ))
+        .filter(zone => !useHeightFilter ||
+            getPriceZoneHeightATR(zone, "ORDER_BLOCK", context.atr) >= context.minHeightATR
+        )
         .map(zone => {
             const boundary = event.direction === "BULLISH" ? zone.low : zone.high;
             const displacement = event.direction === "BULLISH"
@@ -1581,12 +1789,17 @@ function selectOrderBlocksForConfirmedLeg(orderBlocks, event, leg, data, limit) 
         .map(candidate => ({ ...candidate.zone }));
 }
 
-function selectFVGsForConfirmedLeg(fvgs, event, leg, data, limit) {
+function selectFVGsForConfirmedLeg(fvgs, event, leg, data, limit, context = {}) {
     if (!Array.isArray(fvgs) || !Number.isInteger(limit) || limit <= 0) return [];
+    const useHeightFilter = Number.isFinite(context.atr) && context.atr > 0 &&
+        Number.isFinite(context.minHeightATR) && context.minHeightATR >= 0;
     return fvgs
         .filter(zone => isPriceZoneInsideConfirmedStructureLeg(
             zone, event, leg, "FVG"
         ))
+        .filter(zone => !useHeightFilter ||
+            getPriceZoneHeightATR(zone, "FVG", context.atr) >= context.minHeightATR
+        )
         .map(zone => {
             const gapSize = zone.top - zone.bottom;
             const gapPercent = gapSize / zone.midpoint * 100;
@@ -1636,35 +1849,60 @@ function selectStructureConfirmedPriceZones(source = {}, options = {}) {
     const selectedEvents = normalizedOptions.maxEvents === 0
         ? []
         : confirmedEvents.slice(-normalizedOptions.maxEvents);
+    const significance = selectSignificantStructureEventsForZoneQualification(
+        selectedEvents, data, normalizedOptions
+    );
     const selectedOrderBlocks = [];
     const selectedFVGs = [];
     const legs = [];
     const orderBlockIds = new Set();
     const fvgIds = new Set();
-    let previousEvent = null;
-    selectedEvents.forEach(event => {
-        const leg = getConfirmedStructureImpulseLeg(event, previousEvent, data);
-        previousEvent = event;
-        if (!leg) return;
+    const suppressedSmallOrderBlockIds = new Set();
+    const suppressedSmallFVGIds = new Set();
+    significance.significantEvents.forEach(({ event, leg, metrics, significanceScore }) => {
         legs.push({ ...leg });
         const availableOrderBlocks = rawOrderBlocks.filter(zone =>
             !orderBlockIds.has(zone?.id)
         );
         const availableFVGs = rawFVGs.filter(zone => !fvgIds.has(zone?.id));
+        availableOrderBlocks.forEach(zone => {
+            const heightATR = getPriceZoneHeightATR(zone, "ORDER_BLOCK", metrics.atr);
+            if (isPriceZoneInsideConfirmedStructureLeg(
+                zone, event, leg, "ORDER_BLOCK"
+            ) && Number.isFinite(heightATR) &&
+                heightATR < normalizedOptions.minOrderBlockHeightATR) {
+                suppressedSmallOrderBlockIds.add(zone.id);
+            }
+        });
+        availableFVGs.forEach(zone => {
+            const heightATR = getPriceZoneHeightATR(zone, "FVG", metrics.atr);
+            if (isPriceZoneInsideConfirmedStructureLeg(
+                zone, event, leg, "FVG"
+            ) && Number.isFinite(heightATR) &&
+                heightATR < normalizedOptions.minFVGHeightATR) {
+                suppressedSmallFVGIds.add(zone.id);
+            }
+        });
         selectOrderBlocksForConfirmedLeg(
             availableOrderBlocks, event, leg, data,
-            normalizedOptions.orderBlocksPerEvent
+            normalizedOptions.orderBlocksPerEvent,
+            { atr: metrics.atr, minHeightATR: normalizedOptions.minOrderBlockHeightATR }
         ).forEach(zone => {
             if (orderBlockIds.has(zone.id)) return;
             orderBlockIds.add(zone.id);
-            selectedOrderBlocks.push(addStructureQualificationMetadata(zone, event, leg));
+            selectedOrderBlocks.push(addStructureQualificationMetadata(
+                zone, event, leg, metrics, significanceScore
+            ));
         });
         selectFVGsForConfirmedLeg(
-            availableFVGs, event, leg, data, normalizedOptions.fvgsPerEvent
+            availableFVGs, event, leg, data, normalizedOptions.fvgsPerEvent,
+            { atr: metrics.atr, minHeightATR: normalizedOptions.minFVGHeightATR }
         ).forEach(zone => {
             if (fvgIds.has(zone.id)) return;
             fvgIds.add(zone.id);
-            selectedFVGs.push(addStructureQualificationMetadata(zone, event, leg));
+            selectedFVGs.push(addStructureQualificationMetadata(
+                zone, event, leg, metrics, significanceScore
+            ));
         });
     });
     const sortQualified = (a, b) =>
@@ -1678,22 +1916,51 @@ function selectStructureConfirmedPriceZones(source = {}, options = {}) {
         generatedAt: getLastValidSmartMoneyTime(data),
         orderBlocks: selectedOrderBlocks,
         fvgs: selectedFVGs,
-        structureEvents: selectedEvents.map(event => ({ ...event })),
+        structureEvents: significance.significantEvents.map(item => ({ ...item.event })),
         legs,
         summary: {
             sourceOrderBlocks: rawOrderBlocks.length,
             sourceFVGs: rawFVGs.length,
             sourceStructureEvents: rawEvents.length,
-            confirmedStructureEvents: selectedEvents.length,
+            confirmedStructureEvents: confirmedEvents.length,
+            significantStructureEvents: significance.significantEvents.length,
+            suppressedMicroStructureEvents: Math.max(
+                0, confirmedEvents.length - significance.significantEvents.length
+            ),
             qualifiedOrderBlocks: selectedOrderBlocks.length,
             qualifiedFVGs: selectedFVGs.length,
             suppressedOrderBlocks: Math.max(0, rawOrderBlocks.length - selectedOrderBlocks.length),
-            suppressedFVGs: Math.max(0, rawFVGs.length - selectedFVGs.length)
+            suppressedFVGs: Math.max(0, rawFVGs.length - selectedFVGs.length),
+            rejectedMicroLegBars: countRejectedReason(significance.rejectedEvents, "MICRO_LEG_BARS"),
+            rejectedMicroLegRange: countRejectedReason(significance.rejectedEvents, "MICRO_LEG_RANGE"),
+            rejectedWeakBreakDistance: countRejectedReason(significance.rejectedEvents, "WEAK_BREAK_DISTANCE"),
+            rejectedWeakConfirmation: countRejectedReason(significance.rejectedEvents, "WEAK_CONFIRMATION"),
+            rejectedInternalProgression: countRejectedReason(
+                significance.rejectedEvents, "NON_PROGRESSIVE_INTERNAL_STRUCTURE"
+            ),
+            rejectedOppositeNonCHoCH: countRejectedReason(
+                significance.rejectedEvents, "OPPOSITE_EVENT_NOT_CHOCH"
+            ),
+            suppressedSmallOrderBlocks: suppressedSmallOrderBlockIds.size,
+            suppressedSmallFVGs: suppressedSmallFVGIds.size
         }
     };
 }
 
-function addStructureQualificationMetadata(zone, event, leg) {
+function countRejectedReason(rejectedEvents, reason) {
+    return rejectedEvents.filter(event => event.reason === reason).length;
+}
+
+function addStructureQualificationMetadata(
+    zone,
+    event,
+    leg,
+    metrics = null,
+    significanceScore = null
+) {
+    const zoneHeightATR = metrics
+        ? getPriceZoneHeightATR(zone, zone.kind, metrics.atr)
+        : null;
     return {
         ...zone,
         structureQualified: true,
@@ -1706,7 +1973,18 @@ function addStructureQualificationMetadata(zone, event, leg) {
         structureLegStartTime: leg.legStartTime,
         structureLegEndIndex: leg.legEndIndex,
         structureLegEndTime: leg.legEndTime,
-        qualificationReason: "CONFIRMED_STRUCTURE_IMPULSE"
+        qualificationReason: "CONFIRMED_SIGNIFICANT_EXTERNAL_STRUCTURE",
+        qualificationVersion: "3.2",
+        structureSignificant: true,
+        structureSignificanceScore: Number.isFinite(significanceScore)
+            ? significanceScore : null,
+        structureATR: metrics?.atr ?? null,
+        structureLegBars: metrics?.legBars ?? null,
+        structureLegRangeATR: metrics?.legRangeATR ?? null,
+        structureBreakDistanceATR: metrics?.breakDistanceATR ?? null,
+        structureConfirmationBodyATR: metrics?.confirmationBodyATR ?? null,
+        structureConfirmationBodyRatio: metrics?.confirmationBodyRatio ?? null,
+        zoneHeightATR
     };
 }
 
@@ -1832,7 +2110,8 @@ console.log("HNDai SmartMoney v5 Ready");
 
 window.HNDSmartMoney = {
     ...(window.HNDSmartMoney || {}),
-    selectStructureConfirmedPriceZones
+    selectStructureConfirmedPriceZones,
+    selectSignificantStructureEventsForZoneQualification
 };
 
 window.SM_LOADED = true;
