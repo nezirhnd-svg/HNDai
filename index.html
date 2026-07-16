@@ -86,6 +86,17 @@ TradeAI Pro
         <div id="tvchart" class="chart-panel active"></div>
         <div id="hndChart" class="chart-panel inactive" aria-hidden="true"></div>
         <div id="hndChartError" class="chart-error" hidden></div>
+        <div id="mtfTrendMatrix" class="mtf-trend-matrix" aria-label="Multi timeframe trend matrix" aria-live="polite">
+            <table>
+                <thead><tr><th scope="col">TF</th><th scope="col">Trend</th><th scope="col">Pocket</th></tr></thead>
+                <tbody>
+                    <tr data-mtf-row="5m"><th scope="row">5m</th><td data-mtf-trend="5m">—</td><td data-mtf-pocket="5m">—</td></tr>
+                    <tr data-mtf-row="15m"><th scope="row">15m</th><td data-mtf-trend="15m">—</td><td data-mtf-pocket="15m">—</td></tr>
+                    <tr data-mtf-row="1h"><th scope="row">1H</th><td data-mtf-trend="1h">—</td><td data-mtf-pocket="1h">—</td></tr>
+                    <tr data-mtf-row="4h"><th scope="row">4H</th><td data-mtf-trend="4h">—</td><td data-mtf-pocket="4h">—</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -203,6 +214,7 @@ TradeAI Pro
 <script src="js/tradeEngine.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/chart.js"></script>
+<script src="js/mtf.js"></script>
 
 <script src="script.js"></script>
 

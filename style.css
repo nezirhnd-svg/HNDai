@@ -170,6 +170,75 @@ body{
     pointer-events: none;
 }
 
+.mtf-trend-matrix {
+    position: absolute;
+    right: 72px;
+    bottom: 34px;
+    z-index: 8;
+    pointer-events: none;
+    overflow: hidden;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+}
+
+.mtf-trend-matrix table {
+    border-collapse: collapse;
+    font-size: 10px;
+    line-height: 1.15;
+}
+
+.mtf-trend-matrix th,
+.mtf-trend-matrix td {
+    min-width: 42px;
+    padding: 3px 6px;
+    border-right: 1px solid rgba(148, 163, 184, 0.14);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.mtf-trend-matrix tr:last-child th,
+.mtf-trend-matrix tr:last-child td {
+    border-bottom: 0;
+}
+
+.mtf-trend-matrix th:last-child,
+.mtf-trend-matrix td:last-child {
+    border-right: 0;
+}
+
+.mtf-trend-matrix thead th {
+    color: #94a3b8;
+    background: rgba(30, 41, 59, 0.72);
+    font-weight: 600;
+}
+
+.mtf-trend-bull {
+    color: #60a5fa;
+    background: rgba(37, 99, 235, 0.30);
+    font-weight: 700;
+}
+
+.mtf-trend-bear {
+    color: #ffffff;
+    background: rgba(220, 38, 38, 0.78);
+    font-weight: 700;
+}
+
+.mtf-trend-neutral {
+    color: #cbd5e1;
+    background: rgba(71, 85, 105, 0.55);
+    font-weight: 700;
+}
+
+.mtf-pocket-in { color: #5eead4; }
+.mtf-pocket-out { color: #cbd5e1; }
+.mtf-loading { color: #94a3b8; }
+.mtf-error { color: #fca5a5; }
+
 .card{
     background:#111827;
     border:1px solid #1f2937;
@@ -217,6 +286,21 @@ hr{
 .chart-stage{
     height:520px;
     min-height:520px;
+}
+
+.mtf-trend-matrix {
+    right: 10px;
+    bottom: 28px;
+}
+
+.mtf-trend-matrix table {
+    font-size: 9px;
+}
+
+.mtf-trend-matrix th,
+.mtf-trend-matrix td {
+    min-width: 36px;
+    padding: 3px 4px;
 }
 
 .chart-toolbar,

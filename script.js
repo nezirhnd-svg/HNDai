@@ -77,6 +77,7 @@ function setupMarketControls() {
         }
 
         currentCoin = selectedCoin;
+        window.HNDMTFEngine?.setSymbol?.(currentCoin);
         activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
@@ -111,6 +112,13 @@ if (
     typeof window.HNDChartEngine.setupControls === "function"
 ) {
     window.HNDChartEngine.setupControls();
+}
+
+if (
+    window.HNDMTFEngine &&
+    typeof window.HNDMTFEngine.init === "function"
+) {
+    window.HNDMTFEngine.init(currentCoin);
 }
 
 // Ana Motor
