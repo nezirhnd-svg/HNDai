@@ -33,6 +33,12 @@ const HND_ZONE_DIRECTION_LIMIT = 3;
 const HND_ZONE_LABEL_LIMIT = 6;
 const HND_ZONE_MIN_PIXEL_HEIGHT = 2;
 const HND_ZONE_LABEL_GAP = 5;
+const HND_MAJOR_HISTORY_MIN_SCORE = 85;
+const HND_MAJOR_HISTORY_MIN_HEIGHT_ATR = 0.75;
+const HND_MICRO_INVALIDATED_MIN_SCORE = 85;
+const HND_MICRO_INVALIDATED_MIN_HEIGHT_ATR = 0.75;
+const HND_MICRO_MITIGATED_MIN_SCORE = 70;
+const HND_MICRO_MITIGATED_MIN_HEIGHT_ATR = 0.35;
 let hndOverlayLastRenderStats = {
     structureEvents: 0,
     structureLabels: 0,
@@ -40,6 +46,10 @@ let hndOverlayLastRenderStats = {
     orderBlocks: 0,
     fvgZones: 0,
     priceZoneLabels: 0
+};
+let hndOverlayLastSelectedPriceZones = {
+    orderBlocks: [],
+    fvgs: []
 };
 
 function setHNDChartText(id, value) {
@@ -136,7 +146,26 @@ function normalizeHNDPriceZone(zone, expectedKind) {
         mitigationTime, invalidationTime, endTime, touches: zone.touches,
         index: Number.isFinite(zone.index) ? zone.index : null,
         confirmationIndex: Number.isFinite(zone.confirmationIndex)
-            ? zone.confirmationIndex : null
+            ? zone.confirmationIndex : null,
+        structureQualified: zone.structureQualified === true,
+        structureSignificant: zone.structureSignificant === true,
+        structureSignificanceScore: Math.min(100, Math.max(0,
+            Number.isFinite(zone.structureSignificanceScore)
+                ? zone.structureSignificanceScore : 0
+        )),
+        structureATR: Number.isFinite(zone.structureATR) && zone.structureATR > 0
+            ? zone.structureATR : null,
+        zoneHeightATR: Number.isFinite(zone.zoneHeightATR) && zone.zoneHeightATR >= 0
+            ? zone.zoneHeightATR : 0,
+        structureEventId: typeof zone.structureEventId === "string" && zone.structureEventId
+            ? zone.structureEventId : null,
+        structureConfirmationIndex: Number.isInteger(zone.structureConfirmationIndex)
+            ? zone.structureConfirmationIndex : null,
+        qualificationVersion: typeof zone.qualificationVersion === "string"
+            ? zone.qualificationVersion : null,
+        dominantQualifiedZone: zone.dominantQualifiedZone === true,
+        zoneDominanceRank: Number.isFinite(zone.zoneDominanceRank) && zone.zoneDominanceRank > 0
+            ? zone.zoneDominanceRank : null
     };
 }
 
@@ -513,17 +542,49 @@ function getHNDPriceZoneStatusPriority(status) {
     return { ACTIVE: 4, TOUCHED: 3, MITIGATED: 2, INVALIDATED: 1 }[status] || 0;
 }
 
+function getHNDPriceZoneActionabilityPriority(status) {
+    return status === "ACTIVE" ? 2 : status === "TOUCHED" ? 1 : 0;
+}
+
+function isHNDMajorHistoricalPriceZone(candidate) {
+    const zone = candidate?.zone || candidate;
+    return Boolean(
+        zone && ["MITIGATED", "INVALIDATED"].includes(zone.status) &&
+        Number.isFinite(zone.structureSignificanceScore) &&
+        zone.structureSignificanceScore >= HND_MAJOR_HISTORY_MIN_SCORE &&
+        Number.isFinite(zone.zoneHeightATR) &&
+        zone.zoneHeightATR >= HND_MAJOR_HISTORY_MIN_HEIGHT_ATR
+    );
+}
+
+function compareHNDMajorHistoricalPriceZonePriority(first, second) {
+    return second.zone.zoneHeightATR - first.zone.zoneHeightATR ||
+        second.zone.structureSignificanceScore - first.zone.structureSignificanceScore ||
+        Number(second.zone.dominantQualifiedZone) - Number(first.zone.dominantQualifiedZone) ||
+        first.zone.startTime - second.zone.startTime ||
+        first.zone.id.localeCompare(second.zone.id);
+}
+
 function compareHNDPriceZonePriority(first, second) {
     const firstDistance = Number.isFinite(first.distancePercent)
         ? first.distancePercent : Number.MAX_VALUE;
     const secondDistance = Number.isFinite(second.distancePercent)
         ? second.distancePercent : Number.MAX_VALUE;
-    return getHNDPriceZoneStatusPriority(second.zone.status) -
+    return Number(second.zone.dominantQualifiedZone) - Number(first.zone.dominantQualifiedZone) ||
+        Number(second.zone.structureQualified) - Number(first.zone.structureQualified) ||
+        getHNDPriceZoneActionabilityPriority(second.zone.status) -
+            getHNDPriceZoneActionabilityPriority(first.zone.status) ||
+        Number(isHNDMajorHistoricalPriceZone(second)) -
+            Number(isHNDMajorHistoricalPriceZone(first)) ||
+        second.zone.zoneHeightATR - first.zone.zoneHeightATR ||
+        second.zone.structureSignificanceScore - first.zone.structureSignificanceScore ||
+        getHNDPriceZoneStatusPriority(second.zone.status) -
         getHNDPriceZoneStatusPriority(first.zone.status) ||
         firstDistance - secondDistance ||
         first.zone.touches - second.zone.touches ||
-        second.zone.startTime - first.zone.startTime ||
-        (second.zone.confirmationTime ?? 0) - (first.zone.confirmationTime ?? 0) ||
+        first.zone.startTime - second.zone.startTime ||
+        (second.zone.structureConfirmationIndex ?? -1) -
+            (first.zone.structureConfirmationIndex ?? -1) ||
         first.zone.id.localeCompare(second.zone.id);
 }
 
@@ -533,37 +594,95 @@ function compareHNDPriceZoneLabelPriority(first, second) {
         ? first.distancePercent : Number.MAX_VALUE;
     const secondDistance = Number.isFinite(second.distancePercent)
         ? second.distancePercent : Number.MAX_VALUE;
-    return labelStatus(second.zone.status) - labelStatus(first.zone.status) ||
+    return Number(second.zone.dominantQualifiedZone) - Number(first.zone.dominantQualifiedZone) ||
+        second.zone.structureSignificanceScore - first.zone.structureSignificanceScore ||
+        second.zone.zoneHeightATR - first.zone.zoneHeightATR ||
+        labelStatus(second.zone.status) - labelStatus(first.zone.status) ||
         firstDistance - secondDistance ||
-        second.zone.startTime - first.zone.startTime ||
+        first.zone.startTime - second.zone.startTime ||
         first.zone.id.localeCompare(second.zone.id);
+}
+
+function passesHNDPriceZoneDisplayHistoryQuality(zone) {
+    const hasMetadata = zone?.structureQualified === true ||
+        typeof zone?.qualificationVersion === "string";
+    if (!hasMetadata) return true;
+    if (zone.status === "ACTIVE" || zone.status === "TOUCHED") return true;
+    if (zone.status === "INVALIDATED") {
+        return zone.structureSignificanceScore >= HND_MICRO_INVALIDATED_MIN_SCORE &&
+            zone.zoneHeightATR >= HND_MICRO_INVALIDATED_MIN_HEIGHT_ATR;
+    }
+    if (zone.status === "MITIGATED") {
+        return zone.structureSignificanceScore >= HND_MICRO_MITIGATED_MIN_SCORE &&
+            zone.zoneHeightATR >= HND_MICRO_MITIGATED_MIN_HEIGHT_ATR;
+    }
+    return true;
+}
+
+function areHNDPriceZoneCandidatesRedundant(first, second) {
+    if (!first?.zone || !second?.zone || first.zone.kind !== second.zone.kind ||
+        first.zone.type !== second.zone.type) return false;
+    const priceIntersection = Math.max(0,
+        Math.min(first.zone.top, second.zone.top) - Math.max(first.zone.bottom, second.zone.bottom)
+    );
+    const firstHeight = first.zone.top - first.zone.bottom;
+    const secondHeight = second.zone.top - second.zone.bottom;
+    if (firstHeight <= 0 || secondHeight <= 0) return false;
+    const contains = (first.zone.bottom <= second.zone.bottom && first.zone.top >= second.zone.top) ||
+        (second.zone.bottom <= first.zone.bottom && second.zone.top >= first.zone.top);
+    const overlapRatio = priceIntersection / Math.min(firstHeight, secondHeight);
+    const xIntersection = Math.max(0,
+        Math.min(Math.max(first.x1, first.x2), Math.max(second.x1, second.x2)) -
+        Math.max(Math.min(first.x1, first.x2), Math.min(second.x1, second.x2))
+    );
+    const minXWidth = Math.min(Math.abs(first.x2 - first.x1), Math.abs(second.x2 - second.x1));
+    const xOverlapsMeaningfully = minXWidth > 0 && xIntersection / minXWidth >= 0.25;
+    return xOverlapsMeaningfully && (contains || overlapRatio >= 0.75);
 }
 
 function selectHNDPriceZonesForDisplay(zones, kind, width, height, totalLimit) {
     if (!Array.isArray(zones) || !Number.isFinite(totalLimit) || totalLimit <= 0) return [];
     const candidates = zones
         .filter(zone => zone?.kind === kind)
+        .filter(passesHNDPriceZoneDisplayHistoryQuality)
         .map(zone => getHNDPriceZoneDisplayCandidate(zone, width, height))
         .filter(Boolean)
         .sort(compareHNDPriceZonePriority);
     const selected = [];
     const selectedIds = new Set();
-    ["BULLISH", "BEARISH"].forEach(direction => {
-        candidates.filter(candidate => candidate.zone.type === direction)
-            .slice(0, HND_ZONE_DIRECTION_LIMIT)
-            .forEach(candidate => {
-                if (selected.length < totalLimit && !selectedIds.has(candidate.zone.id)) {
-                    selected.push(candidate);
-                    selectedIds.add(candidate.zone.id);
-                }
-            });
-    });
+    const directionCounts = { BULLISH: 0, BEARISH: 0 };
+    const addCandidate = (candidate, selectionReason) => {
+        const direction = candidate.zone.type;
+        if (selected.length >= totalLimit || selectedIds.has(candidate.zone.id) ||
+            directionCounts[direction] >= HND_ZONE_DIRECTION_LIMIT ||
+            selected.some(existing => areHNDPriceZoneCandidatesRedundant(existing, candidate))) {
+            return false;
+        }
+        selected.push({ ...candidate, selectionReason });
+        selectedIds.add(candidate.zone.id);
+        directionCounts[direction]++;
+        return true;
+    };
+    const reservedMajorZones = ["BULLISH", "BEARISH"]
+        .map(direction => candidates
+            .filter(candidate => candidate.zone.type === direction &&
+                isHNDMajorHistoricalPriceZone(candidate))
+            .sort(compareHNDMajorHistoricalPriceZonePriority)[0]
+        )
+        .filter(Boolean)
+        .sort(compareHNDMajorHistoricalPriceZonePriority);
+    for (const candidate of reservedMajorZones) {
+        if (selected.length >= totalLimit) break;
+        addCandidate(candidate, "MAJOR_HISTORY_RESERVED");
+    }
     for (const candidate of candidates) {
         if (selected.length >= totalLimit) break;
-        if (!selectedIds.has(candidate.zone.id)) {
-            selected.push(candidate);
-            selectedIds.add(candidate.zone.id);
-        }
+        const selectionReason = candidate.zone.status === "ACTIVE"
+            ? "ACTIVE_PRIORITY"
+            : candidate.zone.status === "TOUCHED"
+                ? "TOUCHED_PRIORITY"
+                : "GLOBAL_QUALITY";
+        addCandidate(candidate, selectionReason);
     }
     return selected.sort((a, b) =>
         a.zone.startTime - b.zone.startTime ||
@@ -733,6 +852,24 @@ function renderHNDOverlays() {
     const selectedOrderBlocks = selectHNDPriceZonesForDisplay(
         hndOverlayData.orderBlocks, "ORDER_BLOCK", width, height, HND_OB_DISPLAY_LIMIT
     );
+    const summarizeSelectedZone = candidate => ({
+        id: candidate.zone.id,
+        kind: candidate.zone.kind,
+        type: candidate.zone.type,
+        status: candidate.zone.status,
+        top: candidate.zone.top,
+        bottom: candidate.zone.bottom,
+        structureSignificanceScore: candidate.zone.structureSignificanceScore,
+        zoneHeightATR: candidate.zone.zoneHeightATR,
+        distancePercent: candidate.distancePercent,
+        dominantQualifiedZone: candidate.zone.dominantQualifiedZone,
+        majorHistoricalZone: isHNDMajorHistoricalPriceZone(candidate),
+        selectionReason: candidate.selectionReason
+    });
+    hndOverlayLastSelectedPriceZones = {
+        orderBlocks: selectedOrderBlocks.map(summarizeSelectedZone),
+        fvgs: selectedFVGs.map(summarizeSelectedZone)
+    };
     const zoneLabelIds = new Set(
         [...selectedFVGs, ...selectedOrderBlocks]
             .sort(compareHNDPriceZoneLabelPriority)
@@ -845,6 +982,7 @@ function clearHNDOverlays() {
         fvgZones: 0,
         priceZoneLabels: 0
     };
+    hndOverlayLastSelectedPriceZones = { orderBlocks: [], fvgs: [] };
 }
 
 function resizeHNDChartToContainer() {
@@ -1153,6 +1291,10 @@ window.HNDChartEngine = {
                 orderBlockCount: hndOverlayData?.orderBlocks?.length || 0,
                 fvgCount: hndOverlayData?.fvgs?.length || 0,
                 lastRenderStats: { ...hndOverlayLastRenderStats },
+                selectedPriceZones: {
+                    orderBlocks: hndOverlayLastSelectedPriceZones.orderBlocks.map(zone => ({ ...zone })),
+                    fvgs: hndOverlayLastSelectedPriceZones.fvgs.map(zone => ({ ...zone }))
+                },
                 lastCandleTime: hndChartLastCandleTime
             }
         };
