@@ -31,7 +31,38 @@ function setEvidence(id, evidence, emptyMessage) {
     });
 }
 
-function updateUI(result, price) {
+function formatSetupStatus(status) {
+    return status === "NO_SETUP" ? "NO SETUP" : String(status || "NO SETUP");
+}
+
+function formatSetupSource(sourceType) {
+    if (sourceType === "OB_FVG_CONFLUENCE") return "OB + FVG";
+    if (sourceType === "ORDER_BLOCK") return "ORDER BLOCK";
+    if (sourceType === "FVG") return "FVG";
+    return "-";
+}
+
+function clearSetupStatusClasses(element) {
+    if (!element) return;
+    [...element.classList].filter(name => name.startsWith("setup-status-"))
+        .forEach(name => element.classList.remove(name));
+}
+
+function updateSetupUI(setupState) {
+    const setup = setupState?.currentSetup || null;
+    const status = setup?.state || "NO_SETUP";
+    const statusElement = document.getElementById("setupStatus");
+    setText("setupStatus", formatSetupStatus(status));
+    clearSetupStatusClasses(statusElement);
+    statusElement?.classList.add(`setup-status-${status.toLowerCase().replaceAll("_", "-")}`);
+    setText("setupDirection", setup?.direction || "-");
+    setText("setupSource", formatSetupSource(setup?.sourceType));
+    setText("entryZone", setup ? `${formatNumber(setup.entryLow)} - ${formatNumber(setup.entryHigh)}` : "-");
+    setText("entry", setup ? formatNumber(setup.entryTarget) : "-");
+    setText("setupQuality", Number.isFinite(setup?.quality) ? `${setup.quality}%` : "-");
+}
+
+function updateUI(result, price, setupState = null) {
     const signal = document.getElementById("signal");
 
     const signalValue = result?.signal ?? "WAIT";
@@ -55,7 +86,7 @@ function updateUI(result, price) {
     setEvidence("bullishEvidence", result?.evidence?.bullish, "No bullish evidence");
     setEvidence("bearishEvidence", result?.evidence?.bearish, "No bearish evidence");
 
-    setText("entry", formatNumber(price));
+    updateSetupUI(setupState);
 
     if (activeTrade) {
         setText("sl", formatNumber(activeTrade.stopLoss));
