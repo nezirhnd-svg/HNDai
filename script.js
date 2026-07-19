@@ -109,10 +109,10 @@ function setupMarketControls() {
         }
 
         currentCoin = selectedCoin;
-        window.HNDSetupEngine?.reset?.("SYMBOL_CHANGED");
+        window.HNDTradeEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDTradePlanEngine?.reset?.("SYMBOL_CHANGED");
+        window.HNDSetupEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDMTFEngine?.setSymbol?.(currentCoin);
-        activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
         initTradingView();
@@ -130,9 +130,9 @@ function setupMarketControls() {
 
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
-        window.HNDSetupEngine?.reset?.("TIMEFRAME_CHANGED");
+        window.HNDTradeEngine?.reset?.("TIMEFRAME_CHANGED");
         window.HNDTradePlanEngine?.reset?.("TIMEFRAME_CHANGED");
-        activeTrade = null;
+        window.HNDSetupEngine?.reset?.("TIMEFRAME_CHANGED");
         window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
         initTradingView();
@@ -378,10 +378,40 @@ async function startEngine() {
     };
 
     // Trade varsa kontrol et
-    if (activeTrade) checkTrade(price);
+    let tradeState = { status: "NO_TRADE", activeTrade: null };
+    try {
+        if (window.HNDTradeEngine?.evaluate) {
+            tradeState = window.HNDTradeEngine.evaluate({
+                symbol: cycleCoin, interval: cycleInterval, price,
+                candles: loadedCandles, setupState, tradePlanState
+            });
+        }
+    } catch (tradeError) {
+        console.warn("Paper trade engine evaluation failed; analysis will continue.", tradeError);
+        tradeState = {
+            status: "NO_TRADE", activeTrade: null,
+            debug: {
+                version: "4.3", symbol: cycleCoin, interval: cycleInterval, price,
+                primaryReason: "TRADE_ENGINE_ERROR",
+                errorMessage: String(tradeError?.message || tradeError).slice(0, 300)
+            }
+        };
+    }
+
+    window.HNDLastTradeEvaluation = {
+        symbol: cycleCoin, interval: cycleInterval, price,
+        status: tradeState?.status ?? "NO_TRADE",
+        activeTrade: tradeState?.activeTrade
+            ? JSON.parse(JSON.stringify(tradeState.activeTrade)) : null,
+        lastClosedTrade: tradeState?.lastClosedTrade
+            ? JSON.parse(JSON.stringify(tradeState.lastClosedTrade)) : null,
+        debug: tradeState?.lastEvaluation?.debug
+            ? JSON.parse(JSON.stringify(tradeState.lastEvaluation.debug))
+            : tradeState?.debug ? JSON.parse(JSON.stringify(tradeState.debug)) : null
+    };
 
     // Arayüzü güncelle
-    updateUI(result, price, setupState, tradePlanState);
+    updateUI(result, price, setupState, tradePlanState, tradeState);
 
     } finally {
         engineRunning = false;
