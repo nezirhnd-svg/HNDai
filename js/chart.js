@@ -20,6 +20,15 @@ let hndChartLastCandleClose = null;
 let hndOverlayCanvas = null;
 let hndOverlayContext = null;
 let hndOverlayData = null;
+let hndTradeOverlayData = {
+    symbol: null,
+    interval: null,
+    currentPrice: null,
+    pendingPlan: null,
+    activeTrade: null,
+    history: []
+};
+let hndTradeOverlayLastUpdate = null;
 let hndOverlayAnimationFrame = null;
 let hndOverlaySubscriptionsInitialized = false;
 const HND_STRUCTURE_DISPLAY_LIMIT = 10;
@@ -39,13 +48,31 @@ const HND_MICRO_INVALIDATED_MIN_SCORE = 85;
 const HND_MICRO_INVALIDATED_MIN_HEIGHT_ATR = 0.75;
 const HND_MICRO_MITIGATED_MIN_SCORE = 70;
 const HND_MICRO_MITIGATED_MIN_HEIGHT_ATR = 0.35;
+const HND_TRADE_HISTORY_DISPLAY_LIMIT = 5;
+const HND_TRADE_RIGHT_GUTTER = 76;
+const HND_TRADE_LINE_MIN_WIDTH = 20;
+const HND_TRADE_LABEL_PADDING_X = 6;
+const HND_TRADE_LABEL_PADDING_Y = 4;
+const HND_TRADE_LABEL_GAP = 5;
+const HND_TRADE_OFFSCREEN_MARGIN = 8;
+const HND_TRADE_PRICE_EPSILON = 1e-12;
 let hndOverlayLastRenderStats = {
     structureEvents: 0,
     structureLabels: 0,
     liquidityZones: 0,
     orderBlocks: 0,
     fvgZones: 0,
-    priceZoneLabels: 0
+    priceZoneLabels: 0,
+    tradePendingPlans: 0,
+    tradeActiveTrades: 0,
+    tradeHistoryTrades: 0,
+    tradeEntryLines: 0,
+    tradeStopLines: 0,
+    tradeTargetLines: 0,
+    tradeExitMarkers: 0,
+    tradeCurrentPriceMarkers: 0,
+    tradeOffscreenIndicators: 0,
+    tradeLabels: 0
 };
 let hndOverlayLastSelectedPriceZones = {
     orderBlocks: [],
@@ -106,6 +133,133 @@ function normalizeHNDOverlayTime(value) {
     return Number.isFinite(value) && value > 0
         ? Math.floor(value / 1000)
         : null;
+}
+
+function normalizeHNDTradeTime(value) {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return Math.floor(value >= 1e12 ? value / 1000 : value);
+}
+
+function formatHNDTradePrice(value) {
+    if (!Number.isFinite(value) || value <= 0) return "-";
+    if (value >= 1000) return value.toFixed(2);
+    if (value >= 1) return value.toFixed(4);
+    if (value >= 0.01) return value.toFixed(6);
+    return value.toFixed(8);
+}
+
+function formatHNDTradeR(value) {
+    if (!Number.isFinite(value)) return "-";
+    const normalized = Math.abs(value) < HND_TRADE_PRICE_EPSILON ? 0 : value;
+    return `${normalized > 0 ? "+" : ""}${normalized.toFixed(2)}R`;
+}
+
+function hasValidHNDTradeLevels(direction, entryPrice, stopLoss, takeProfit) {
+    if (![entryPrice, stopLoss, takeProfit].every(value => Number.isFinite(value) && value > 0) ||
+        !["LONG", "SHORT"].includes(direction)) return false;
+    return direction === "LONG"
+        ? stopLoss < entryPrice && entryPrice < takeProfit
+        : takeProfit < entryPrice && entryPrice < stopLoss;
+}
+
+function normalizeHNDPendingTradeOverlay(symbol, interval, tradePlanState, tradeState) {
+    const pending = tradeState?.pendingExecution;
+    const plan = tradePlanState?.currentPlan;
+    if (!pending || !plan || plan.state !== "READY" ||
+        typeof plan.key !== "string" || !plan.key || pending.planKey !== plan.key ||
+        plan.symbol !== symbol || plan.interval !== interval ||
+        !hasValidHNDTradeLevels(plan.direction, plan.entryPrice, plan.stopLoss, plan.takeProfit)) {
+        return null;
+    }
+    const startTime = normalizeHNDTradeTime(pending.observedCandleTime) ??
+        normalizeHNDTradeTime(pending.observedAt) ?? hndChartLastCandleTime;
+    return {
+        id: typeof plan.id === "string" && plan.id ? plan.id : plan.key,
+        planKey: plan.key,
+        setupKey: typeof plan.setupKey === "string" ? plan.setupKey : null,
+        symbol, interval, direction: plan.direction, state: "WAITING_ENTRY",
+        entryPrice: plan.entryPrice, stopLoss: plan.stopLoss, takeProfit: plan.takeProfit,
+        startTime, observedAt: Number.isFinite(pending.observedAt) ? pending.observedAt : null
+    };
+}
+
+function normalizeHNDActiveTradeOverlay(symbol, interval, trade) {
+    if (!trade || trade.state !== "OPEN" ||
+        !(typeof trade.id === "string" && trade.id || typeof trade.key === "string" && trade.key) ||
+        trade.symbol !== symbol || trade.interval !== interval ||
+        !hasValidHNDTradeLevels(trade.direction, trade.entryPrice, trade.stopLoss, trade.takeProfit)) {
+        return null;
+    }
+    return {
+        id: typeof trade.id === "string" && trade.id ? trade.id : trade.key,
+        key: typeof trade.key === "string" ? trade.key : null,
+        planKey: typeof trade.planKey === "string" ? trade.planKey : null,
+        symbol, interval, direction: trade.direction, state: "OPEN",
+        entryPrice: trade.entryPrice, stopLoss: trade.stopLoss, takeProfit: trade.takeProfit,
+        lastPrice: Number.isFinite(trade.lastPrice) && trade.lastPrice > 0 ? trade.lastPrice : null,
+        unrealizedR: Number.isFinite(trade.unrealizedR) ? trade.unrealizedR : null,
+        maxFavorableR: Number.isFinite(trade.maxFavorableR) ? trade.maxFavorableR : null,
+        maxAdverseR: Number.isFinite(trade.maxAdverseR) ? trade.maxAdverseR : null,
+        startTime: normalizeHNDTradeTime(trade.openedAtCandleTime) ??
+            normalizeHNDTradeTime(trade.openedAt) ?? hndChartLastCandleTime,
+        openedAt: Number.isFinite(trade.openedAt) ? trade.openedAt : null
+    };
+}
+
+function normalizeHNDTradeHistory(symbol, interval, source) {
+    const acceptedStates = new Set([
+        "CLOSED_TP", "CLOSED_SL", "CANCELLED_MARKET_CHANGE", "CANCELLED_MANUAL"
+    ]);
+    const byIdentity = new Map();
+    (Array.isArray(source) ? source : []).forEach(trade => {
+        const identity = typeof trade?.id === "string" && trade.id
+            ? `ID:${trade.id}` : typeof trade?.key === "string" && trade.key ? `KEY:${trade.key}` : null;
+        if (!identity || trade.symbol !== symbol || trade.interval !== interval ||
+            !acceptedStates.has(trade.state) ||
+            !hasValidHNDTradeLevels(trade.direction, trade.entryPrice, trade.stopLoss, trade.takeProfit) ||
+            !Number.isFinite(trade.exitPrice) || trade.exitPrice <= 0) return;
+        const startTime = normalizeHNDTradeTime(trade.openedAtCandleTime) ??
+            normalizeHNDTradeTime(trade.openedAt);
+        const endTime = normalizeHNDTradeTime(trade.closedAtCandleTime) ??
+            normalizeHNDTradeTime(trade.closedAt);
+        if (startTime === null || endTime === null || endTime < startTime) return;
+        const normalized = {
+            id: typeof trade.id === "string" && trade.id ? trade.id : trade.key,
+            key: typeof trade.key === "string" ? trade.key : null,
+            symbol, interval, direction: trade.direction, state: trade.state,
+            entryPrice: trade.entryPrice, stopLoss: trade.stopLoss, takeProfit: trade.takeProfit,
+            startTime, endTime, exitPrice: trade.exitPrice,
+            realizedR: Number.isFinite(trade.realizedR) ? trade.realizedR : null,
+            exitReason: typeof trade.exitReason === "string" ? trade.exitReason : null
+        };
+        const existing = byIdentity.get(identity);
+        if (!existing || normalized.endTime > existing.endTime) byIdentity.set(identity, normalized);
+    });
+    return [...byIdentity.values()].sort((first, second) =>
+        second.endTime - first.endTime || second.startTime - first.startTime ||
+        first.id.localeCompare(second.id)
+    ).slice(0, HND_TRADE_HISTORY_DISPLAY_LIMIT);
+}
+
+function normalizeHNDTradeOverlayData(source = {}) {
+    const symbol = typeof source.symbol === "string" ? source.symbol : null;
+    const interval = typeof source.interval === "string" ? source.interval : null;
+    const combinedHistory = [
+        ...(Array.isArray(source.tradeHistory) ? source.tradeHistory : []),
+        ...(source.tradeState?.lastClosedTrade ? [source.tradeState.lastClosedTrade] : [])
+    ];
+    return {
+        symbol,
+        interval,
+        currentPrice: Number.isFinite(source.price) && source.price > 0 ? source.price : null,
+        pendingPlan: symbol && interval ? normalizeHNDPendingTradeOverlay(
+            symbol, interval, source.tradePlanState, source.tradeState
+        ) : null,
+        activeTrade: symbol && interval ? normalizeHNDActiveTradeOverlay(
+            symbol, interval, source.tradeState?.activeTrade
+        ) : null,
+        history: symbol && interval ? normalizeHNDTradeHistory(symbol, interval, combinedHistory) : []
+    };
 }
 
 function normalizeHNDPriceZone(zone, expectedKind) {
@@ -833,9 +987,198 @@ function drawHNDLiquidityZone(ctx, zone, isOverall, width, height) {
     }
 }
 
+function placeHNDTradeLabel(
+    preferredX, preferredY, width, height, labelWidth, labelHeight, existingRects
+) {
+    const maxX = Math.max(0, width - labelWidth);
+    const x = Math.max(0, Math.min(maxX, preferredX));
+    const baseY = Math.max(0, Math.min(Math.max(0, height - labelHeight), preferredY));
+    const overlaps = rect => existingRects.some(existing =>
+        rect.left < existing.right + HND_TRADE_LABEL_GAP &&
+        rect.right + HND_TRADE_LABEL_GAP > existing.left &&
+        rect.top < existing.bottom + HND_TRADE_LABEL_GAP &&
+        rect.bottom + HND_TRADE_LABEL_GAP > existing.top
+    );
+    const candidates = [0];
+    for (let step = 1; step <= 8; step++) {
+        candidates.push(step * (labelHeight + HND_TRADE_LABEL_GAP));
+    }
+    for (let step = 1; step <= 8; step++) {
+        candidates.push(-step * (labelHeight + HND_TRADE_LABEL_GAP));
+    }
+    for (const offset of candidates) {
+        const top = baseY + offset;
+        const rect = { left: x, top, right: x + labelWidth, bottom: top + labelHeight };
+        if (top < 0 || rect.bottom > height || overlaps(rect)) continue;
+        existingRects.push(rect);
+        return rect;
+    }
+    return null;
+}
+
+function drawHNDTradeLabel(ctx, text, preferredX, preferredY, color, width, height, pass) {
+    ctx.font = "11px Arial";
+    const textWidth = ctx.measureText(text).width;
+    const labelWidth = textWidth + HND_TRADE_LABEL_PADDING_X * 2;
+    const labelHeight = 11 + HND_TRADE_LABEL_PADDING_Y * 2;
+    const rect = placeHNDTradeLabel(
+        preferredX, preferredY, width, height, labelWidth, labelHeight, pass.labelRects
+    );
+    if (!rect) return false;
+    ctx.fillStyle = "rgba(15,23,42,.90)";
+    ctx.fillRect(rect.left, rect.top, labelWidth, labelHeight);
+    ctx.fillStyle = color;
+    ctx.fillText(text, rect.left + HND_TRADE_LABEL_PADDING_X,
+        rect.top + HND_TRADE_LABEL_PADDING_Y + 10);
+    pass.stats.tradeLabels++;
+    pass.labels.push(text);
+    return true;
+}
+
+function getHNDTradeOpenRange(startTime, width) {
+    const right = Math.max(HND_TRADE_LINE_MIN_WIDTH, width - HND_TRADE_RIGHT_GUTTER);
+    let start = null;
+    try { start = hndChart.timeScale().timeToCoordinate(startTime); } catch (error) { start = null; }
+    if (!Number.isFinite(start)) {
+        try {
+            const lastX = hndChart.timeScale().timeToCoordinate(hndChartLastCandleTime);
+            if (!Number.isFinite(lastX) || lastX < 0 || lastX > width) return null;
+            start = 0;
+        } catch (error) { return null; }
+    }
+    if (start > right) return null;
+    start = Math.max(0, start);
+    return { start, end: Math.max(start + HND_TRADE_LINE_MIN_WIDTH, right) };
+}
+
+function getHNDTradeHistoryRange(startTime, endTime, width) {
+    const rightEdge = Math.max(0, width - HND_TRADE_RIGHT_GUTTER);
+    let start = null;
+    let end = null;
+    try {
+        start = hndChart.timeScale().timeToCoordinate(startTime);
+        end = hndChart.timeScale().timeToCoordinate(endTime);
+    } catch (error) { return null; }
+    if (!Number.isFinite(start) && !Number.isFinite(end)) return null;
+    if (!Number.isFinite(start)) start = 0;
+    if (!Number.isFinite(end)) end = rightEdge;
+    if (Math.max(start, end) < 0 || Math.min(start, end) > rightEdge) return null;
+    return { start: Math.max(0, Math.min(rightEdge, start)),
+        end: Math.max(0, Math.min(rightEdge, end)) };
+}
+
+function drawHNDTradeLevel(ctx, range, price, kind, color, dashed, lineWidth, width, height, pass) {
+    let y = null;
+    try { y = hndCandleSeries.priceToCoordinate(price); } catch (error) { y = null; }
+    if (!Number.isFinite(y)) return false;
+    const label = `${kind} ${formatHNDTradePrice(price)}`;
+    if (y < 0 || y > height) {
+        const top = y < 0;
+        const edgeY = top ? HND_TRADE_OFFSCREEN_MARGIN : height - HND_TRADE_OFFSCREEN_MARGIN;
+        ctx.save();
+        drawHNDTradeLabel(ctx, `${top ? "↑" : "↓"} ${label}`,
+            Math.max(0, width - HND_TRADE_RIGHT_GUTTER - 72),
+            top ? 1 : Math.max(0, height - 24), color, width, height, pass);
+        ctx.restore();
+        pass.stats.tradeOffscreenIndicators++;
+        return false;
+    }
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.setLineDash(dashed);
+    ctx.beginPath(); ctx.moveTo(range.start, y); ctx.lineTo(range.end, y); ctx.stroke();
+    ctx.setLineDash([]);
+    drawHNDTradeLabel(ctx, label, Math.max(0, range.end - 72), y - 10,
+        color, width, height, pass);
+    ctx.restore();
+    if (kind === "ENTRY") pass.stats.tradeEntryLines++;
+    if (kind === "SL") pass.stats.tradeStopLines++;
+    if (kind === "TP") pass.stats.tradeTargetLines++;
+    return true;
+}
+
+function drawHNDPendingTradeOverlay(ctx, pending, width, height, pass) {
+    const range = getHNDTradeOpenRange(pending.startTime, width);
+    if (!range) return false;
+    ctx.save();
+    drawHNDTradeLevel(ctx, range, pending.entryPrice, "ENTRY", "#facc15", [7, 5], 2,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, pending.stopLoss, "SL", "rgba(239,68,68,.65)", [6, 5], 1,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, pending.takeProfit, "TP", "rgba(34,197,94,.65)", [6, 5], 1,
+        width, height, pass);
+    drawHNDTradeLabel(ctx, `WAITING ${pending.direction}`, Math.max(0, range.end - 90), 8,
+        "#facc15", width, height, pass);
+    ctx.restore();
+    pass.stats.tradePendingPlans++;
+    return true;
+}
+
+function drawHNDActiveTradeOverlay(ctx, trade, width, height, pass) {
+    const range = getHNDTradeOpenRange(trade.startTime, width);
+    if (!range) return false;
+    ctx.save();
+    drawHNDTradeLevel(ctx, range, trade.entryPrice, "ENTRY", "#22d3ee", [], 2,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, trade.stopLoss, "SL", "#ef4444", [7, 5], 2,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, trade.takeProfit, "TP", "#22c55e", [7, 5], 2,
+        width, height, pass);
+    drawHNDTradeLabel(ctx, `${trade.direction} ${formatHNDTradeR(trade.unrealizedR)}`,
+        Math.max(0, range.end - 90), 8, "#ffffff", width, height, pass);
+    if (Number.isFinite(trade.lastPrice) && trade.lastPrice > 0) {
+        let y = null;
+        try { y = hndCandleSeries.priceToCoordinate(trade.lastPrice); } catch (error) { y = null; }
+        if (Number.isFinite(y) && y >= 0 && y <= height) {
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath(); ctx.arc(range.end - 5, y, 3, 0, Math.PI * 2); ctx.fill();
+            pass.stats.tradeCurrentPriceMarkers++;
+            drawHNDTradeLabel(ctx, `PRICE ${formatHNDTradePrice(trade.lastPrice)}`,
+                Math.max(0, range.end - 88), y + 7, "#ffffff", width, height, pass);
+        }
+    }
+    ctx.restore();
+    pass.stats.tradeActiveTrades++;
+    return true;
+}
+
+function drawHNDHistoricalTradeOverlay(ctx, trade, width, height, pass) {
+    const range = getHNDTradeHistoryRange(trade.startTime, trade.endTime, width);
+    if (!range || range.end < range.start) return false;
+    ctx.save();
+    drawHNDTradeLevel(ctx, range, trade.entryPrice, "ENTRY", "rgba(148,163,184,.65)", [], 1,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, trade.stopLoss, "SL", "rgba(239,68,68,.35)", [4, 4], 1,
+        width, height, pass);
+    drawHNDTradeLevel(ctx, range, trade.takeProfit, "TP", "rgba(34,197,94,.35)", [4, 4], 1,
+        width, height, pass);
+    const isTP = trade.state === "CLOSED_TP";
+    const isSL = trade.state === "CLOSED_SL";
+    const color = isTP ? "#22c55e" : isSL ? "#ef4444" : "#94a3b8";
+    const prefix = isTP ? "TP" : isSL ? "SL" : "CANCELLED";
+    let exitY = null;
+    try { exitY = hndCandleSeries.priceToCoordinate(trade.exitPrice); } catch (error) { exitY = null; }
+    if (Number.isFinite(exitY) && exitY >= 0 && exitY <= height) {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(range.end, exitY, 4, 0, Math.PI * 2); ctx.fill();
+        pass.stats.tradeExitMarkers++;
+        const rText = formatHNDTradeR(trade.realizedR);
+        drawHNDTradeLabel(ctx, rText === "-" ? prefix : `${prefix} ${rText}`,
+            range.end + 5, exitY - 10, color, width, height, pass);
+    }
+    ctx.restore();
+    pass.stats.tradeHistoryTrades++;
+    return true;
+}
+
 function renderHNDOverlays() {
     if (!hndChartInitialized || !hndChart || !hndCandleSeries ||
-        !hndOverlayCanvas || !hndOverlayContext || !hndOverlayData) return false;
+        !hndOverlayCanvas || !hndOverlayContext) return false;
+    const overlayData = hndOverlayData || {
+        structureEvents: [], orderBlocks: [], fvgs: [],
+        strongestLiquidity: { overall: null, buySide: null, sellSide: null }
+    };
     clearHNDOverlayCanvas();
     const width = parseFloat(hndOverlayCanvas.style.width) || hndOverlayCanvas.clientWidth || 0;
     const height = parseFloat(hndOverlayCanvas.style.height) || hndOverlayCanvas.clientHeight || 0;
@@ -847,10 +1190,10 @@ function renderHNDOverlays() {
     let priceZoneLabels = 0;
     const labelRects = [];
     const selectedFVGs = selectHNDPriceZonesForDisplay(
-        hndOverlayData.fvgs, "FVG", width, height, HND_FVG_DISPLAY_LIMIT
+        overlayData.fvgs, "FVG", width, height, HND_FVG_DISPLAY_LIMIT
     );
     const selectedOrderBlocks = selectHNDPriceZonesForDisplay(
-        hndOverlayData.orderBlocks, "ORDER_BLOCK", width, height, HND_OB_DISPLAY_LIMIT
+        overlayData.orderBlocks, "ORDER_BLOCK", width, height, HND_OB_DISPLAY_LIMIT
     );
     const summarizeSelectedZone = candidate => ({
         id: candidate.zone.id,
@@ -892,7 +1235,7 @@ function renderHNDOverlays() {
     drawPriceZones(selectedOrderBlocks, orderBlockCounter);
     fvgZones = fvgCounter.count;
     orderBlocks = orderBlockCounter.count;
-    const strongest = hndOverlayData.strongestLiquidity || {};
+    const strongest = overlayData.strongestLiquidity || {};
     const drawnZones = new Set();
     const zoneEntries = [
         [strongest.overall, true],
@@ -906,7 +1249,7 @@ function renderHNDOverlays() {
         if (drawHNDLiquidityZone(hndOverlayContext, zone, isOverall, width, height)) liquidityZones++;
     }
     const displayEvents = selectHNDStructureEventsForDisplay(
-        hndOverlayData.structureEvents,
+        overlayData.structureEvents,
         width,
         height
     );
@@ -927,13 +1270,37 @@ function renderHNDOverlays() {
             labelEventIds.has(event.id)
         )) structureEvents++;
     }
+    const tradeStats = {
+        tradePendingPlans: 0, tradeActiveTrades: 0, tradeHistoryTrades: 0,
+        tradeEntryLines: 0, tradeStopLines: 0, tradeTargetLines: 0,
+        tradeExitMarkers: 0, tradeCurrentPriceMarkers: 0,
+        tradeOffscreenIndicators: 0, tradeLabels: 0
+    };
+    const tradePass = { stats: tradeStats, labelRects: [], labels: [] };
+    [...(hndTradeOverlayData.history || [])]
+        .sort((first, second) => first.startTime - second.startTime ||
+            first.endTime - second.endTime || first.id.localeCompare(second.id))
+        .forEach(trade => drawHNDHistoricalTradeOverlay(
+            hndOverlayContext, trade, width, height, tradePass
+        ));
+    if (hndTradeOverlayData.pendingPlan) {
+        drawHNDPendingTradeOverlay(
+            hndOverlayContext, hndTradeOverlayData.pendingPlan, width, height, tradePass
+        );
+    }
+    if (hndTradeOverlayData.activeTrade) {
+        drawHNDActiveTradeOverlay(
+            hndOverlayContext, hndTradeOverlayData.activeTrade, width, height, tradePass
+        );
+    }
     hndOverlayLastRenderStats = {
         structureEvents,
         structureLabels: labelStats.count,
         liquidityZones,
         orderBlocks,
         fvgZones,
-        priceZoneLabels
+        priceZoneLabels,
+        ...tradeStats
     };
     return true;
 }
@@ -965,7 +1332,41 @@ function updateHNDOverlays(source) {
     return true;
 }
 
+function updateHNDTradeOverlays(source = {}) {
+    hndTradeOverlayData = normalizeHNDTradeOverlayData(source);
+    hndTradeOverlayLastUpdate = {
+        symbol: hndTradeOverlayData.symbol,
+        interval: hndTradeOverlayData.interval,
+        pendingPlanKey: hndTradeOverlayData.pendingPlan?.planKey ?? null,
+        activeTradeId: hndTradeOverlayData.activeTrade?.id ?? null,
+        historyCount: hndTradeOverlayData.history.length,
+        updatedAt: Date.now()
+    };
+    if (!initHNDOverlayCanvas()) return false;
+    resizeHNDOverlayCanvas();
+    setupHNDOverlaySubscriptions();
+    scheduleHNDOverlayRender();
+    return true;
+}
+
+function clearHNDTradeOverlays() {
+    hndTradeOverlayData = {
+        symbol: null, interval: null, currentPrice: null,
+        pendingPlan: null, activeTrade: null, history: []
+    };
+    hndTradeOverlayLastUpdate = null;
+    hndOverlayLastRenderStats = {
+        ...hndOverlayLastRenderStats,
+        tradePendingPlans: 0, tradeActiveTrades: 0, tradeHistoryTrades: 0,
+        tradeEntryLines: 0, tradeStopLines: 0, tradeTargetLines: 0,
+        tradeExitMarkers: 0, tradeCurrentPriceMarkers: 0,
+        tradeOffscreenIndicators: 0, tradeLabels: 0
+    };
+    scheduleHNDOverlayRender();
+}
+
 function clearHNDOverlays() {
+    clearHNDTradeOverlays();
     hndOverlayData = {
         structureEvents: [],
         orderBlocks: [],
@@ -980,9 +1381,20 @@ function clearHNDOverlays() {
         liquidityZones: 0,
         orderBlocks: 0,
         fvgZones: 0,
-        priceZoneLabels: 0
+        priceZoneLabels: 0,
+        tradePendingPlans: 0,
+        tradeActiveTrades: 0,
+        tradeHistoryTrades: 0,
+        tradeEntryLines: 0,
+        tradeStopLines: 0,
+        tradeTargetLines: 0,
+        tradeExitMarkers: 0,
+        tradeCurrentPriceMarkers: 0,
+        tradeOffscreenIndicators: 0,
+        tradeLabels: 0
     };
     hndOverlayLastSelectedPriceZones = { orderBlocks: [], fvgs: [] };
+    scheduleHNDOverlayRender();
 }
 
 function resizeHNDChartToContainer() {
@@ -1269,7 +1681,13 @@ window.HNDChartEngine = {
     resetView: resetHNDChartView,
     normalizeCandles: normalizeHNDChartCandles,
     updateOverlays: updateHNDOverlays,
+    updateTradeOverlays: updateHNDTradeOverlays,
     clearOverlays: clearHNDOverlays,
+    clearTradeOverlays: clearHNDTradeOverlays,
+    normalizeTradeOverlayData: normalizeHNDTradeOverlayData,
+    normalizeTradeTime: normalizeHNDTradeTime,
+    formatTradePrice: formatHNDTradePrice,
+    formatTradeR: formatHNDTradeR,
     renderOverlays: scheduleHNDOverlayRender,
     getState() {
         const liquidityIds = new Set([
@@ -1296,6 +1714,24 @@ window.HNDChartEngine = {
                     fvgs: hndOverlayLastSelectedPriceZones.fvgs.map(zone => ({ ...zone }))
                 },
                 lastCandleTime: hndChartLastCandleTime
+            },
+            tradeOverlay: {
+                pendingVisible: Boolean(hndTradeOverlayData.pendingPlan),
+                activeVisible: Boolean(hndTradeOverlayData.activeTrade),
+                historyVisibleCount: hndTradeOverlayData.history.length,
+                lastUpdate: hndTradeOverlayLastUpdate ? { ...hndTradeOverlayLastUpdate } : null,
+                lastRenderStats: {
+                    tradePendingPlans: hndOverlayLastRenderStats.tradePendingPlans,
+                    tradeActiveTrades: hndOverlayLastRenderStats.tradeActiveTrades,
+                    tradeHistoryTrades: hndOverlayLastRenderStats.tradeHistoryTrades,
+                    tradeEntryLines: hndOverlayLastRenderStats.tradeEntryLines,
+                    tradeStopLines: hndOverlayLastRenderStats.tradeStopLines,
+                    tradeTargetLines: hndOverlayLastRenderStats.tradeTargetLines,
+                    tradeExitMarkers: hndOverlayLastRenderStats.tradeExitMarkers,
+                    tradeCurrentPriceMarkers: hndOverlayLastRenderStats.tradeCurrentPriceMarkers,
+                    tradeOffscreenIndicators: hndOverlayLastRenderStats.tradeOffscreenIndicators,
+                    tradeLabels: hndOverlayLastRenderStats.tradeLabels
+                }
             }
         };
     }
