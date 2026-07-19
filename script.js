@@ -110,6 +110,7 @@ function setupMarketControls() {
 
         currentCoin = selectedCoin;
         window.HNDSetupEngine?.reset?.("SYMBOL_CHANGED");
+        window.HNDTradePlanEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDMTFEngine?.setSymbol?.(currentCoin);
         activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
@@ -130,6 +131,7 @@ function setupMarketControls() {
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
         window.HNDSetupEngine?.reset?.("TIMEFRAME_CHANGED");
+        window.HNDTradePlanEngine?.reset?.("TIMEFRAME_CHANGED");
         activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
@@ -170,6 +172,9 @@ async function startEngine() {
         fvgs: [],
         summary: {}
     };
+    let cycleStructureEvents = [];
+    let cycleLiquidityZones = [];
+    let cycleStrongestLiquidity = { overall: null, buySide: null, sellSide: null };
 
     try {
 
@@ -200,17 +205,15 @@ async function startEngine() {
             typeof detectLiquidityZones === "function" &&
             typeof getStrongestLiquidityZones === "function" &&
             typeof detectOrderBlocks === "function" &&
-            typeof detectFVGs === "function" &&
-            window.HNDChartEngine &&
-            typeof window.HNDChartEngine.updateOverlays === "function"
+            typeof detectFVGs === "function"
         ) {
-            const structureEvents = detectStructureEvents({
+            cycleStructureEvents = detectStructureEvents({
                 lookback: 3,
                 limit: HND_STRUCTURE_HISTORY_LIMIT,
                 includeBOS: true,
                 includeCHoCH: true
             });
-            const liquidityZones = detectLiquidityZones({
+            cycleLiquidityZones = detectLiquidityZones({
                 lookback: 3,
                 tolerance: 0.0015,
                 minTouches: 2,
@@ -218,7 +221,7 @@ async function startEngine() {
                 includeSwept: true,
                 includeBroken: false
             });
-            const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
+            cycleStrongestLiquidity = getStrongestLiquidityZones(cycleLiquidityZones);
             const rawOrderBlocks = detectOrderBlocks({
                 limit: HND_RAW_ZONE_HISTORY_LIMIT,
                 includeInvalidated: true
@@ -234,7 +237,7 @@ async function startEngine() {
                 cycleQualifiedPriceZones = selectStructureConfirmedPriceZones(
                     {
                         candles: loadedCandles,
-                        structureEvents,
+                        structureEvents: cycleStructureEvents,
                         orderBlocks: rawOrderBlocks,
                         fvgs: rawFVGs
                     },
@@ -264,12 +267,15 @@ async function startEngine() {
                 }
             };
 
-            window.HNDChartEngine.updateOverlays({
-                structureEvents,
-                strongestLiquidity,
-                orderBlocks: cycleQualifiedPriceZones.orderBlocks,
-                fvgs: cycleQualifiedPriceZones.fvgs
-            });
+            if (window.HNDChartEngine &&
+                typeof window.HNDChartEngine.updateOverlays === "function") {
+                window.HNDChartEngine.updateOverlays({
+                    structureEvents: cycleStructureEvents,
+                    strongestLiquidity: cycleStrongestLiquidity,
+                    orderBlocks: cycleQualifiedPriceZones.orderBlocks,
+                    fvgs: cycleQualifiedPriceZones.fvgs
+                });
+            }
         }
     } catch (overlayError) {
         console.warn("HNDai Chart overlays could not be updated; the analysis engine will continue.", overlayError);
@@ -331,11 +337,51 @@ async function startEngine() {
             ? JSON.parse(JSON.stringify(setupState.lastEvaluation.debug)) : null
     };
 
+    let tradePlanState = { status: "NO_PLAN", currentPlan: null };
+    try {
+        if (window.HNDTradePlanEngine &&
+            typeof window.HNDTradePlanEngine.evaluate === "function") {
+            tradePlanState = window.HNDTradePlanEngine.evaluate({
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                price,
+                candles: loadedCandles,
+                setupState,
+                liquidityZones: cycleLiquidityZones,
+                strongestLiquidity: cycleStrongestLiquidity
+            });
+        }
+    } catch (planError) {
+        console.warn("Trade Plan Engine evaluation failed; no trade was opened.", planError);
+        tradePlanState = {
+            status: "NO_PLAN",
+            currentPlan: null,
+            lastEvaluation: {
+                debug: {
+                    version: "4.2", symbol: cycleCoin, interval: cycleInterval, price,
+                    primaryReason: "PLAN_ENGINE_ERROR",
+                    errorMessage: String(planError?.message || planError).slice(0, 300)
+                }
+            }
+        };
+    }
+
+    window.HNDLastTradePlanEvaluation = {
+        symbol: cycleCoin,
+        interval: cycleInterval,
+        price,
+        status: tradePlanState?.status ?? "NO_PLAN",
+        currentPlan: tradePlanState?.currentPlan
+            ? JSON.parse(JSON.stringify(tradePlanState.currentPlan)) : null,
+        debug: tradePlanState?.lastEvaluation?.debug
+            ? JSON.parse(JSON.stringify(tradePlanState.lastEvaluation.debug)) : null
+    };
+
     // Trade varsa kontrol et
     if (activeTrade) checkTrade(price);
 
     // Arayüzü güncelle
-    updateUI(result, price, setupState);
+    updateUI(result, price, setupState, tradePlanState);
 
     } finally {
         engineRunning = false;
