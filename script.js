@@ -25,10 +25,23 @@ const TIMEFRAME_MAP = {
     "1d": { binance: "1d", tradingView: "D" }
 };
 
+const HND_STRUCTURE_HISTORY_LIMIT = 100;
+const HND_RAW_ZONE_HISTORY_LIMIT = 200;
+
 const HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS = Object.freeze({
-    maxEvents: 20,
-    orderBlocksPerEvent: 1,
-    fvgsPerEvent: 1,
+    maxEvents: HND_STRUCTURE_HISTORY_LIMIT,
+    orderBlocksPerEvent: 2,
+    fvgsPerEvent: 2,
+    maxQualifiedOrderBlocks: 24,
+    maxQualifiedFVGs: 24,
+    nestedContainmentToleranceATR: 0.05,
+    nearZoneMidpointATR: 0.18,
+    nearZoneOverlapRatio: 0.70,
+    zoneClusterMaxEventBars: 24,
+    invalidatedMinSignificanceScore: 70,
+    invalidatedMinZoneHeightATR: 0.18,
+    mitigatedMinSignificanceScore: 55,
+    mitigatedMinZoneHeightATR: 0.10,
     includeBOS: true,
     includeCHoCH: true,
     requireClosedConfirmation: true,
@@ -96,6 +109,7 @@ function setupMarketControls() {
         }
 
         currentCoin = selectedCoin;
+        window.HNDSetupEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDMTFEngine?.setSymbol?.(currentCoin);
         activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
@@ -115,6 +129,7 @@ function setupMarketControls() {
 
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
+        window.HNDSetupEngine?.reset?.("TIMEFRAME_CHANGED");
         activeTrade = null;
         window.HNDChartEngine?.clearOverlays?.();
         window.HNDChartEngine?.requestFit?.();
@@ -149,6 +164,12 @@ async function startEngine() {
 
     const cycleCoin = currentCoin;
     const cycleInterval = currentInterval;
+    let cycleQualifiedPriceZones = {
+        generatedAt: null,
+        orderBlocks: [],
+        fvgs: [],
+        summary: {}
+    };
 
     try {
 
@@ -185,7 +206,7 @@ async function startEngine() {
         ) {
             const structureEvents = detectStructureEvents({
                 lookback: 3,
-                limit: 20,
+                limit: HND_STRUCTURE_HISTORY_LIMIT,
                 includeBOS: true,
                 includeCHoCH: true
             });
@@ -199,24 +220,18 @@ async function startEngine() {
             });
             const strongestLiquidity = getStrongestLiquidityZones(liquidityZones);
             const rawOrderBlocks = detectOrderBlocks({
-                limit: 50,
+                limit: HND_RAW_ZONE_HISTORY_LIMIT,
                 includeInvalidated: true
             });
             const rawFVGs = detectFVGs({
-                limit: 50,
+                limit: HND_RAW_ZONE_HISTORY_LIMIT,
                 includeInvalidated: true
             });
-            let qualifiedPriceZones = {
-                generatedAt: null,
-                orderBlocks: [],
-                fvgs: [],
-                summary: {}
-            };
             try {
                 if (typeof selectStructureConfirmedPriceZones !== "function") {
                     throw new Error("Structure zone qualifier is unavailable.");
                 }
-                qualifiedPriceZones = selectStructureConfirmedPriceZones(
+                cycleQualifiedPriceZones = selectStructureConfirmedPriceZones(
                     {
                         candles: loadedCandles,
                         structureEvents,
@@ -234,8 +249,8 @@ async function startEngine() {
             window.HNDLastStructureQualification = {
                 symbol: cycleCoin,
                 interval: cycleInterval,
-                generatedAt: qualifiedPriceZones.generatedAt,
-                summary: { ...qualifiedPriceZones.summary },
+                generatedAt: cycleQualifiedPriceZones.generatedAt,
+                summary: { ...cycleQualifiedPriceZones.summary },
                 thresholds: {
                     atrPeriod: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.atrPeriod,
                     minLegBars: HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS.minLegBars,
@@ -252,8 +267,8 @@ async function startEngine() {
             window.HNDChartEngine.updateOverlays({
                 structureEvents,
                 strongestLiquidity,
-                orderBlocks: qualifiedPriceZones.orderBlocks,
-                fvgs: qualifiedPriceZones.fvgs
+                orderBlocks: cycleQualifiedPriceZones.orderBlocks,
+                fvgs: cycleQualifiedPriceZones.fvgs
             });
         }
     } catch (overlayError) {
@@ -273,18 +288,37 @@ async function startEngine() {
     // Analiz yap
     const result = analyzeMarket();
 
-    // Trade yoksa aç
-    if (!activeTrade && result.signal !== "WAIT") {
-
-        openTrade(result.signal, price);
-
+    let setupState = { status: "NO_SETUP", currentSetup: null };
+    try {
+        if (window.HNDSetupEngine && typeof window.HNDSetupEngine.evaluate === "function") {
+            setupState = window.HNDSetupEngine.evaluate({
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                candles: loadedCandles,
+                price,
+                analysis: result,
+                qualifiedPriceZones: cycleQualifiedPriceZones,
+                mtfState: window.HNDMTFEngine?.getState?.() || null
+            });
+        }
+    } catch (setupError) {
+        console.warn("Setup Engine evaluation failed; no raw-price entry was created.", setupError);
     }
 
+    window.HNDLastSetupEvaluation = {
+        symbol: cycleCoin,
+        interval: cycleInterval,
+        price,
+        status: setupState?.status ?? "NO_SETUP",
+        currentSetup: setupState?.currentSetup
+            ? JSON.parse(JSON.stringify(setupState.currentSetup)) : null
+    };
+
     // Trade varsa kontrol et
-    checkTrade(price);
+    if (activeTrade) checkTrade(price);
 
     // Arayüzü güncelle
-    updateUI(result, price);
+    updateUI(result, price, setupState);
 
     } finally {
         engineRunning = false;
