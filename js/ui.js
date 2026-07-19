@@ -2,7 +2,9 @@
 // HNDai UI Engine
 // ==========================
 
-console.log("HNDai UI v4.3");
+console.log("HNDai UI v4.5");
+
+let tradeJournalExportControlsInitialized = false;
 
 function setText(id, value) {
     const element = document.getElementById(id);
@@ -168,7 +170,126 @@ function updateActiveTradeUI(price, tradeState = null) {
     setText("lastExitReason", last?.exitReason ? String(last.exitReason).replaceAll("_", " ") : "-");
 }
 
-function updateUI(result, price, setupState = null, tradePlanState = null, tradeState = null) {
+function formatJournalDate(value) {
+    if (!Number.isFinite(value) || value <= 0) return "-";
+    try { return new Date(value).toLocaleString(); }
+    catch (error) { return "-"; }
+}
+
+function formatJournalOutcome(trade) {
+    if (["WIN", "LOSS", "BREAKEVEN", "CANCELLED"].includes(trade?.journalOutcome)) {
+        return trade.journalOutcome;
+    }
+    return String(trade?.state || "").startsWith("CANCELLED") ? "CANCELLED" : "-";
+}
+
+function formatJournalProfitFactor(metrics) {
+    if (metrics?.profitFactorInfinite === true) return "∞";
+    return Number.isFinite(metrics?.profitFactor) ? metrics.profitFactor.toFixed(2) : "-";
+}
+
+function updateJournalPerformanceUI(journalState) {
+    const metrics = journalState?.metrics || {};
+    const status = journalState?.initialized !== true ? "UNAVAILABLE"
+        : journalState?.persistenceActive === true ? "LOCAL STORAGE"
+            : journalState?.storageAvailable === false ? "MEMORY ONLY" : "MEMORY ONLY";
+    setText("journalStatus", status);
+    setText("completedTrades", Number.isFinite(metrics.completedTrades) ? metrics.completedTrades : 0);
+    setText("winsLosses", `${Number.isFinite(metrics.wins) ? metrics.wins : 0} / ${Number.isFinite(metrics.losses) ? metrics.losses : 0}`);
+    setText("winRate", Number.isFinite(metrics.winRate) ? `${metrics.winRate.toFixed(2)}%` : "-");
+    setText("netR", formatRMultiple(Number.isFinite(metrics.netR) ? metrics.netR : 0));
+    setText("expectancyR", formatRMultiple(metrics.expectancyR));
+    setText("profitFactor", formatJournalProfitFactor(metrics));
+    setText("maxDrawdownR", `${Math.max(0, Number.isFinite(metrics.maxDrawdownR)
+        ? metrics.maxDrawdownR : 0).toFixed(2)}R`);
+    const streakType = metrics.currentStreakType;
+    const streakLength = Number.isFinite(metrics.currentStreakLength)
+        ? metrics.currentStreakLength : 0;
+    setText("currentStreak", streakType === "WIN" && streakLength > 0
+        ? `${streakLength} ${streakLength === 1 ? "WIN" : "WINS"}`
+        : streakType === "LOSS" && streakLength > 0
+            ? `${streakLength} ${streakLength === 1 ? "LOSS" : "LOSSES"}` : "-");
+    setText("cancelledTrades", Number.isFinite(metrics.cancelledTrades) ? metrics.cancelledTrades : 0);
+}
+
+function formatJournalExitReason(reason) {
+    const value = String(reason || "");
+    if (value === "TAKE_PROFIT") return "TAKE PROFIT";
+    if (value === "STOP_LOSS") return "STOP LOSS";
+    if (value === "BOTH_HIT_STOP_FIRST") return "BOTH HIT STOP FIRST";
+    if (["SYMBOL_CHANGED", "TIMEFRAME_CHANGED", "MARKET_CHANGE"].includes(value)) return "MARKET CHANGE";
+    if (["MANUAL_RESET", "MANUAL"].includes(value)) return "MANUAL";
+    return value ? value.replaceAll("_", " ") : "-";
+}
+
+function updateTradeJournalTable(journalState) {
+    const body = document.getElementById("tradeJournalBody");
+    if (!body) return;
+    body.replaceChildren();
+    const trades = Array.isArray(journalState?.recentTrades)
+        ? journalState.recentTrades.slice(0, 20) : [];
+    if (!trades.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 9;
+        cell.textContent = "No closed paper trades";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+    }
+    trades.forEach(trade => {
+        const outcome = formatJournalOutcome(trade);
+        const row = document.createElement("tr");
+        row.className = `trade-journal-row-${outcome.toLowerCase()}`;
+        [
+            formatJournalDate(trade.closedAt), trade.symbol || "-", trade.interval || "-",
+            trade.direction || "-", outcome, formatRMultiple(trade.realizedR),
+            formatMarketPrice(trade.entryPrice), formatMarketPrice(trade.exitPrice),
+            formatJournalExitReason(trade.exitReason)
+        ].forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = String(value);
+            row.appendChild(cell);
+        });
+        body.appendChild(row);
+    });
+}
+
+function downloadTradeJournal(content, type, extension) {
+    try {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `HNDai-paper-trade-journal-${new Date().toISOString().slice(0, 10)}.${extension}`;
+        anchor.hidden = true;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+        console.warn("Trade Journal export could not be created.");
+    }
+}
+
+function setupTradeJournalExportControls() {
+    if (tradeJournalExportControlsInitialized) return;
+    const csvButton = document.getElementById("exportJournalCsv");
+    const jsonButton = document.getElementById("exportJournalJson");
+    if (!csvButton || !jsonButton) return;
+    csvButton.addEventListener("click", () => downloadTradeJournal(
+        window.HNDTradeJournal?.toCSV?.() || "", "text/csv;charset=utf-8", "csv"
+    ));
+    jsonButton.addEventListener("click", () => downloadTradeJournal(
+        window.HNDTradeJournal?.toJSON?.() || "{}", "application/json;charset=utf-8", "json"
+    ));
+    tradeJournalExportControlsInitialized = true;
+}
+
+function updateUI(
+    result, price, setupState = null, tradePlanState = null,
+    tradeState = null, journalState = null
+) {
     const signal = document.getElementById("signal");
 
     const signalValue = result?.signal ?? "WAIT";
@@ -195,6 +316,9 @@ function updateUI(result, price, setupState = null, tradePlanState = null, trade
     updateSetupUI(setupState, tradePlanState, tradeState);
     updateTradePlanUI(setupState, tradePlanState, tradeState);
     updateActiveTradeUI(price, tradeState);
+    updateJournalPerformanceUI(journalState);
+    updateTradeJournalTable(journalState);
+    setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
     setText("bullScore", result?.bullScore ?? "-");
@@ -229,3 +353,5 @@ function updateUI(result, price, setupState = null, tradePlanState = null, trade
 
     setText("liq", smc?.liquidity || "-");
 }
+
+setupTradeJournalExportControls();
