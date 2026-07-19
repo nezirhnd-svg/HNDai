@@ -2,7 +2,7 @@
 // HNDai UI Engine
 // ==========================
 
-console.log("HNDai UI v3");
+console.log("HNDai UI v4.3");
 
 function setText(id, value) {
     const element = document.getElementById(id);
@@ -56,9 +56,10 @@ function clearSetupStatusClasses(element) {
         .forEach(name => element.classList.remove(name));
 }
 
-function updateSetupUI(setupState, tradePlanState = null) {
+function updateSetupUI(setupState, tradePlanState = null, tradeState = null) {
     const setup = setupState?.currentSetup || null;
     const plan = tradePlanState?.currentPlan || null;
+    const trade = tradeState?.activeTrade || activeTrade || null;
     const status = setup?.state || "NO_SETUP";
     const statusElement = document.getElementById("setupStatus");
     setText("setupStatus", formatSetupStatus(status));
@@ -70,7 +71,7 @@ function updateSetupUI(setupState, tradePlanState = null) {
     const entryHigh = setup?.entryHigh ?? plan?.entryHigh;
     setText("entryZone", finiteSetupBounds(entryLow, entryHigh)
         ? `${formatMarketPrice(entryLow)} - ${formatMarketPrice(entryHigh)}` : "-");
-    setText("entry", formatMarketPrice(plan?.entryPrice ?? setup?.entryTarget));
+    setText("entry", formatMarketPrice(trade?.entryPrice ?? plan?.entryPrice ?? setup?.entryTarget));
     setText("setupQuality", Number.isFinite(setup?.quality) ? `${setup.quality}%` : "-");
 }
 
@@ -102,8 +103,9 @@ function clearTradePlanStatusClasses(element) {
         .forEach(name => element.classList.remove(name));
 }
 
-function updateTradePlanUI(setupState, tradePlanState) {
+function updateTradePlanUI(setupState, tradePlanState, tradeState = null) {
     const plan = tradePlanState?.currentPlan || null;
+    const trade = tradeState?.activeTrade || activeTrade || null;
     const status = plan?.state || "NO_PLAN";
     const statusElement = document.getElementById("tradePlanStatus");
     setText("tradePlanStatus", formatTradePlanStatus(status));
@@ -112,9 +114,9 @@ function updateTradePlanUI(setupState, tradePlanState) {
     setText("riskReward", Number.isFinite(plan?.riskReward) ? `${plan.riskReward.toFixed(2)}R` : "-");
     setText("stopSource", formatTradePlanSource(plan?.stopSource, plan));
     setText("targetSource", formatTradePlanSource(plan?.targetSource, plan));
-    if (activeTrade) {
-        setText("sl", formatMarketPrice(activeTrade.stopLoss));
-        setText("tp", formatMarketPrice(activeTrade.takeProfit));
+    if (trade) {
+        setText("sl", formatMarketPrice(trade.stopLoss));
+        setText("tp", formatMarketPrice(trade.takeProfit));
     } else if (plan) {
         setText("sl", formatMarketPrice(plan.stopLoss));
         setText("tp", formatMarketPrice(plan.takeProfit));
@@ -124,7 +126,49 @@ function updateTradePlanUI(setupState, tradePlanState) {
     }
 }
 
-function updateUI(result, price, setupState = null, tradePlanState = null) {
+function formatRMultiple(value) {
+    if (!Number.isFinite(value)) return "-";
+    const normalized = Math.abs(value) < 0.005 ? 0 : value;
+    return `${normalized > 0 ? "+" : ""}${normalized.toFixed(2)}R`;
+}
+
+function formatTradeStatus(status) {
+    const labels = { NO_TRADE: "NO TRADE", WAITING_ENTRY: "WAITING ENTRY", OPEN: "OPEN",
+        CLOSED_TP: "TAKE PROFIT", CLOSED_SL: "STOP LOSS",
+        CANCELLED_MARKET_CHANGE: "CANCELLED", CANCELLED_MANUAL: "CANCELLED" };
+    return labels[status] || String(status || "NO_TRADE").replaceAll("_", " ");
+}
+
+function clearTradeStatusClasses(element) {
+    if (!element) return;
+    [...element.classList].filter(name => name.startsWith("trade-status-"))
+        .forEach(name => element.classList.remove(name));
+}
+
+function updateActiveTradeUI(price, tradeState = null) {
+    const trade = tradeState?.activeTrade || activeTrade || null;
+    const pending = tradeState?.pendingExecution || null;
+    const last = tradeState?.lastClosedTrade || null;
+    const rawStatus = trade ? "OPEN" : pending ? "WAITING_ENTRY" : (tradeState?.status || "NO_TRADE");
+    const statusElement = document.getElementById("tradeStatus");
+    setText("tradeStatus", formatTradeStatus(rawStatus));
+    clearTradeStatusClasses(statusElement);
+    statusElement?.classList.add(`trade-status-${rawStatus.toLowerCase().replaceAll("_", "-")}`);
+    setText("tradeDirection", trade?.direction || pending?.direction || "-");
+    setText("tradeEntry", formatMarketPrice(trade?.entryPrice ?? pending?.entryPrice));
+    setText("tradeCurrentPrice", trade || pending ? formatMarketPrice(price) : "-");
+    setText("tradeUnrealizedR", trade ? formatRMultiple(trade.unrealizedR) : "-");
+    setText("tradeMfe", trade ? formatRMultiple(trade.maxFavorableR) : "-");
+    setText("tradeMae", trade ? formatRMultiple(-Math.abs(trade.maxAdverseR || 0)) : "-");
+    let lastResult = "-";
+    if (last?.state === "CLOSED_TP") lastResult = `TAKE PROFIT ${formatRMultiple(last.realizedR)}`;
+    else if (last?.state === "CLOSED_SL") lastResult = `STOP LOSS ${formatRMultiple(last.realizedR)}`;
+    else if (String(last?.state || "").startsWith("CANCELLED")) lastResult = "CANCELLED";
+    setText("lastTradeResult", lastResult);
+    setText("lastExitReason", last?.exitReason ? String(last.exitReason).replaceAll("_", " ") : "-");
+}
+
+function updateUI(result, price, setupState = null, tradePlanState = null, tradeState = null) {
     const signal = document.getElementById("signal");
 
     const signalValue = result?.signal ?? "WAIT";
@@ -148,8 +192,9 @@ function updateUI(result, price, setupState = null, tradePlanState = null) {
     setEvidence("bullishEvidence", result?.evidence?.bullish, "No bullish evidence");
     setEvidence("bearishEvidence", result?.evidence?.bearish, "No bearish evidence");
 
-    updateSetupUI(setupState, tradePlanState);
-    updateTradePlanUI(setupState, tradePlanState);
+    updateSetupUI(setupState, tradePlanState, tradeState);
+    updateTradePlanUI(setupState, tradePlanState, tradeState);
+    updateActiveTradeUI(price, tradeState);
 
     setText("trend", result?.trend ?? "-");
     setText("bullScore", result?.bullScore ?? "-");
