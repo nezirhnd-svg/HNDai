@@ -13,6 +13,14 @@ function formatNumber(value) {
     return Number.isFinite(value) ? value.toFixed(2) : "-";
 }
 
+function formatMarketPrice(value) {
+    if (!Number.isFinite(value) || value <= 0) return "-";
+    if (value >= 1000) return value.toFixed(2);
+    if (value >= 1) return value.toFixed(4);
+    if (value >= 0.01) return value.toFixed(6);
+    return value.toFixed(8);
+}
+
 function setEvidence(id, evidence, emptyMessage) {
     const container = document.getElementById(id);
     if (!container) return;
@@ -48,8 +56,9 @@ function clearSetupStatusClasses(element) {
         .forEach(name => element.classList.remove(name));
 }
 
-function updateSetupUI(setupState) {
+function updateSetupUI(setupState, tradePlanState = null) {
     const setup = setupState?.currentSetup || null;
+    const plan = tradePlanState?.currentPlan || null;
     const status = setup?.state || "NO_SETUP";
     const statusElement = document.getElementById("setupStatus");
     setText("setupStatus", formatSetupStatus(status));
@@ -57,12 +66,65 @@ function updateSetupUI(setupState) {
     statusElement?.classList.add(`setup-status-${status.toLowerCase().replaceAll("_", "-")}`);
     setText("setupDirection", setup?.direction || "-");
     setText("setupSource", formatSetupSource(setup?.sourceType));
-    setText("entryZone", setup ? `${formatNumber(setup.entryLow)} - ${formatNumber(setup.entryHigh)}` : "-");
-    setText("entry", setup ? formatNumber(setup.entryTarget) : "-");
+    const entryLow = setup?.entryLow ?? plan?.entryLow;
+    const entryHigh = setup?.entryHigh ?? plan?.entryHigh;
+    setText("entryZone", finiteSetupBounds(entryLow, entryHigh)
+        ? `${formatMarketPrice(entryLow)} - ${formatMarketPrice(entryHigh)}` : "-");
+    setText("entry", formatMarketPrice(plan?.entryPrice ?? setup?.entryTarget));
     setText("setupQuality", Number.isFinite(setup?.quality) ? `${setup.quality}%` : "-");
 }
 
-function updateUI(result, price, setupState = null) {
+function finiteSetupBounds(low, high) {
+    return Number.isFinite(low) && low > 0 && Number.isFinite(high) && high >= low;
+}
+
+function formatTradePlanStatus(status) {
+    if (status === "NO_PLAN") return "NO PLAN";
+    if (["CANCELLED_INVALIDATED", "CANCELLED_ORPHANED"].includes(status)) return "CANCELLED";
+    if (status === "CANCELLED_MISSED") return "MISSED";
+    return String(status || "NO PLAN");
+}
+
+function formatTradePlanSource(source, plan = null) {
+    if (source === "SOURCE_ZONE_ATR_BUFFER") return "SOURCE ZONE + ATR BUFFER";
+    if (source === "RR_FALLBACK") return "2R FALLBACK";
+    if (source === "ACTIVE_LIQUIDITY") {
+        return plan?.targetLiquidityType === "BUY_SIDE"
+            ? "BUY-SIDE LIQUIDITY" : plan?.targetLiquidityType === "SELL_SIDE"
+                ? "SELL-SIDE LIQUIDITY" : "ACTIVE LIQUIDITY";
+    }
+    return "-";
+}
+
+function clearTradePlanStatusClasses(element) {
+    if (!element) return;
+    [...element.classList].filter(name => name.startsWith("trade-plan-status-"))
+        .forEach(name => element.classList.remove(name));
+}
+
+function updateTradePlanUI(setupState, tradePlanState) {
+    const plan = tradePlanState?.currentPlan || null;
+    const status = plan?.state || "NO_PLAN";
+    const statusElement = document.getElementById("tradePlanStatus");
+    setText("tradePlanStatus", formatTradePlanStatus(status));
+    clearTradePlanStatusClasses(statusElement);
+    statusElement?.classList.add(`trade-plan-status-${status.toLowerCase().replaceAll("_", "-")}`);
+    setText("riskReward", Number.isFinite(plan?.riskReward) ? `${plan.riskReward.toFixed(2)}R` : "-");
+    setText("stopSource", formatTradePlanSource(plan?.stopSource, plan));
+    setText("targetSource", formatTradePlanSource(plan?.targetSource, plan));
+    if (activeTrade) {
+        setText("sl", formatMarketPrice(activeTrade.stopLoss));
+        setText("tp", formatMarketPrice(activeTrade.takeProfit));
+    } else if (plan) {
+        setText("sl", formatMarketPrice(plan.stopLoss));
+        setText("tp", formatMarketPrice(plan.takeProfit));
+    } else {
+        setText("sl", "-");
+        setText("tp", "-");
+    }
+}
+
+function updateUI(result, price, setupState = null, tradePlanState = null) {
     const signal = document.getElementById("signal");
 
     const signalValue = result?.signal ?? "WAIT";
@@ -86,15 +148,8 @@ function updateUI(result, price, setupState = null) {
     setEvidence("bullishEvidence", result?.evidence?.bullish, "No bullish evidence");
     setEvidence("bearishEvidence", result?.evidence?.bearish, "No bearish evidence");
 
-    updateSetupUI(setupState);
-
-    if (activeTrade) {
-        setText("sl", formatNumber(activeTrade.stopLoss));
-        setText("tp", formatNumber(activeTrade.takeProfit));
-    } else {
-        setText("sl", "-");
-        setText("tp", "-");
-    }
+    updateSetupUI(setupState, tradePlanState);
+    updateTradePlanUI(setupState, tradePlanState);
 
     setText("trend", result?.trend ?? "-");
     setText("bullScore", result?.bullScore ?? "-");
