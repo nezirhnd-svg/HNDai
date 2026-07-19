@@ -411,6 +411,43 @@ async function startEngine() {
     };
 
     // Arayüzü güncelle
+    let tradeHistoryForChart = [];
+    try {
+        tradeHistoryForChart = window.HNDTradeEngine &&
+            typeof window.HNDTradeEngine.getHistory === "function"
+            ? window.HNDTradeEngine.getHistory() : [];
+    } catch (historyError) {
+        console.warn("Paper trade history could not be read for chart.", historyError);
+        tradeHistoryForChart = [];
+    }
+
+    try {
+        if (window.HNDChartEngine &&
+            typeof window.HNDChartEngine.updateTradeOverlays === "function") {
+            window.HNDChartEngine.updateTradeOverlays({
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                price,
+                tradePlanState,
+                tradeState,
+                tradeHistory: tradeHistoryForChart
+            });
+        }
+    } catch (tradeChartError) {
+        console.warn("Paper trade chart overlay failed; the engine will continue.", tradeChartError);
+    }
+
+    window.HNDLastTradeChartOverlay = {
+        symbol: cycleCoin,
+        interval: cycleInterval,
+        status: tradeState?.status ?? "NO_TRADE",
+        pendingPlanKey: tradeState?.pendingExecution?.planKey ?? null,
+        activeTradeId: tradeState?.activeTrade?.id ?? null,
+        lastClosedTradeId: tradeState?.lastClosedTrade?.id ?? null,
+        historyCount: Array.isArray(tradeHistoryForChart) ? tradeHistoryForChart.length : 0,
+        updatedAt: Date.now()
+    };
+
     updateUI(result, price, setupState, tradePlanState, tradeState);
 
     } finally {
