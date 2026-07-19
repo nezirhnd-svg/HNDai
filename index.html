@@ -100,6 +100,30 @@ TradeAI Pro
     </div>
 </div>
 
+<section class="trade-journal-panel">
+<div class="trade-journal-header">
+<div>
+<h2>Paper Trade Journal</h2>
+<p>Closed simulated trades stored locally in this browser.</p>
+</div>
+<div class="trade-journal-actions">
+<button id="exportJournalCsv" type="button">Export CSV</button>
+<button id="exportJournalJson" type="button">Export JSON</button>
+</div>
+</div>
+<div class="trade-journal-table-wrap">
+<table class="trade-journal-table">
+<thead><tr>
+<th>Closed</th><th>Market</th><th>TF</th><th>Direction</th><th>Result</th>
+<th>R</th><th>Entry</th><th>Exit</th><th>Reason</th>
+</tr></thead>
+<tbody id="tradeJournalBody">
+<tr><td colspan="9">No closed paper trades</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
 </section>
 
 <aside class="right sidebar">
@@ -185,6 +209,20 @@ TradeAI Pro
 
 </div>
 
+<div class="card performance-card">
+<h2>PERFORMANCE</h2>
+<p>Journal Status</p><p id="journalStatus">-</p>
+<p>Completed Trades</p><p id="completedTrades">0</p>
+<p>Wins / Losses</p><p id="winsLosses">0 / 0</p>
+<p>Win Rate</p><p id="winRate">-</p>
+<p>Net Result</p><p id="netR">0.00R</p>
+<p>Expectancy</p><p id="expectancyR">-</p>
+<p>Profit Factor</p><p id="profitFactor">-</p>
+<p>Maximum Drawdown</p><p id="maxDrawdownR">0.00R</p>
+<p>Current Streak</p><p id="currentStreak">-</p>
+<p>Cancelled Trades</p><p id="cancelledTrades">0</p>
+</div>
+
 <div class="card">
 
 <h2>AI Decision Evidence</h2>
@@ -256,6 +294,7 @@ TradeAI Pro
 <script src="js/smartmoney.js"></script>
 <script src="js/strategy.js"></script>
 <script src="js/tradeEngine.js"></script>
+<script src="js/tradeJournal.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/mtf.js"></script>

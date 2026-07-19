@@ -389,6 +389,77 @@ box-shadow:0 0 10px rgba(34,197,94,.35);
 .paper-trade-card #tradeMae { font-variant-numeric:tabular-nums; }
 .paper-trade-note { color:#94a3b8; font-size:12px; }
 
+.performance-card #netR,
+.performance-card #expectancyR,
+.performance-card #maxDrawdownR {
+    font-variant-numeric:tabular-nums;
+}
+
+.trade-journal-panel {
+    margin-top:20px;
+    padding:18px;
+    min-width:0;
+    background:#111827;
+    border:1px solid #1f2937;
+    border-radius:18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+
+.trade-journal-header {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    margin-bottom:14px;
+}
+
+.trade-journal-header p { margin-top:5px; color:#94a3b8; }
+
+.trade-journal-actions { display:flex; gap:10px; flex-wrap:wrap; }
+
+.trade-journal-actions button {
+    padding:9px 12px;
+    color:#e2e8f0;
+    background:#1b2333;
+    border:1px solid #334155;
+    border-radius:9px;
+    cursor:pointer;
+}
+
+.trade-journal-actions button:hover { border-color:#22c55e; color:#4ade80; }
+
+.trade-journal-table-wrap { width:100%; overflow-x:auto; }
+
+.trade-journal-table {
+    width:100%;
+    min-width:850px;
+    border-collapse:collapse;
+    font-size:13px;
+}
+
+.trade-journal-table th,
+.trade-journal-table td {
+    padding:10px 9px;
+    border-bottom:1px solid #253044;
+    text-align:left;
+    white-space:nowrap;
+}
+
+.trade-journal-table th { color:#94a3b8; font-weight:600; }
+.trade-journal-row-win td:nth-child(5),
+.trade-journal-row-win td:nth-child(6) { color:#22c55e; }
+.trade-journal-row-loss td:nth-child(5),
+.trade-journal-row-loss td:nth-child(6) { color:#ef4444; }
+.trade-journal-row-breakeven td:nth-child(5),
+.trade-journal-row-breakeven td:nth-child(6) { color:#facc15; }
+.trade-journal-row-cancelled td:nth-child(5),
+.trade-journal-row-cancelled td:nth-child(6) { color:#94a3b8; }
+
+@media (max-width: 760px) {
+    .trade-journal-header { align-items:flex-start; flex-direction:column; }
+    .trade-journal-panel { padding:14px; }
+}
+
 #signal{
     letter-spacing:2px;
 }

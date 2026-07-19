@@ -157,6 +157,15 @@ if (
     window.HNDMTFEngine.init(currentCoin);
 }
 
+let initialJournalState = { initialized: false, tradeCount: 0, metrics: {} };
+try {
+    if (window.HNDTradeJournal && typeof window.HNDTradeJournal.init === "function") {
+        initialJournalState = window.HNDTradeJournal.init();
+    }
+} catch (journalInitError) {
+    console.warn("Trade Journal initialization failed.", journalInitError);
+}
+
 // Ana Motor
 async function startEngine() {
 
@@ -421,6 +430,29 @@ async function startEngine() {
         tradeHistoryForChart = [];
     }
 
+    let journalState = initialJournalState;
+    try {
+        if (window.HNDTradeJournal && typeof window.HNDTradeJournal.sync === "function") {
+            journalState = window.HNDTradeJournal.sync({
+                tradeHistory: tradeHistoryForChart,
+                lastClosedTrade: tradeState?.lastClosedTrade ?? null
+            });
+        }
+    } catch (journalError) {
+        console.warn("Trade Journal synchronization failed; engine will continue.", journalError);
+    }
+
+    window.HNDLastTradeJournalEvaluation = {
+        symbol: cycleCoin,
+        interval: cycleInterval,
+        tradeCount: journalState?.tradeCount ?? 0,
+        completedTrades: journalState?.metrics?.completedTrades ?? 0,
+        netR: journalState?.metrics?.netR ?? 0,
+        persistenceActive: journalState?.persistenceActive === true,
+        primaryReason: journalState?.lastEvaluation?.debug?.primaryReason ?? null,
+        updatedAt: Date.now()
+    };
+
     try {
         if (window.HNDChartEngine &&
             typeof window.HNDChartEngine.updateTradeOverlays === "function") {
@@ -448,7 +480,7 @@ async function startEngine() {
         updatedAt: Date.now()
     };
 
-    updateUI(result, price, setupState, tradePlanState, tradeState);
+    updateUI(result, price, setupState, tradePlanState, tradeState, journalState);
 
     } finally {
         engineRunning = false;
