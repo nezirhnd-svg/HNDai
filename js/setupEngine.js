@@ -8,9 +8,49 @@
     const HND_SETUP_MAX_DISTANCE_ATR = 3;
     const HND_SETUP_INVALIDATION_BUFFER_ATR = 0.05;
     const HND_SETUP_MAX_HISTORY = 50;
+    const HND_SETUP_DEBUG_VERSION = "4.1.1";
+    const HND_SETUP_DEBUG_MAX_REJECTED_SAMPLES = 10;
+    const HND_SETUP_DEBUG_MAX_TOP_CANDIDATES = 5;
     const HND_SETUP_STATES = Object.freeze({
         NO_SETUP: "NO_SETUP", PENDING: "PENDING", ARMED: "ARMED",
         TRIGGERED: "TRIGGERED", INVALIDATED: "INVALIDATED", MISSED: "MISSED"
+    });
+    const HND_SETUP_DEBUG_REASONS = Object.freeze({
+        EXISTING_SETUP_LOCKED: "EXISTING_SETUP_LOCKED",
+        EXISTING_SETUP_UPDATED: "EXISTING_SETUP_UPDATED",
+        SETUP_TRIGGERED: "SETUP_TRIGGERED",
+        SETUP_INVALIDATED: "SETUP_INVALIDATED",
+        SETUP_MISSED: "SETUP_MISSED",
+        WAIT_SIGNAL: "WAIT_SIGNAL",
+        INVALID_PRICE: "INVALID_PRICE",
+        NO_SOURCE_ZONES: "NO_SOURCE_ZONES",
+        NO_VALID_QUALIFIED_ZONES: "NO_VALID_QUALIFIED_ZONES",
+        NO_DIRECTION_MATCH: "NO_DIRECTION_MATCH",
+        ALL_ZONES_INVALID_PRICE_SIDE: "ALL_ZONES_INVALID_PRICE_SIDE",
+        NO_CANDIDATES: "NO_CANDIDATES",
+        ALL_CANDIDATES_TOO_FAR: "ALL_CANDIDATES_TOO_FAR",
+        ALL_CANDIDATES_LOW_QUALITY: "ALL_CANDIDATES_LOW_QUALITY",
+        ALL_CANDIDATES_CONSUMED: "ALL_CANDIDATES_CONSUMED",
+        SETUP_CREATED: "SETUP_CREATED",
+        NO_ACCEPTED_CANDIDATE: "NO_ACCEPTED_CANDIDATE",
+        SETUP_ENGINE_ERROR: "SETUP_ENGINE_ERROR"
+    });
+    const HND_SETUP_ZONE_REJECTION_REASONS = Object.freeze({
+        INVALID_ZONE: "INVALID_ZONE",
+        INVALID_ID: "INVALID_ID",
+        WRONG_KIND: "WRONG_KIND",
+        INVALID_DIRECTION: "INVALID_DIRECTION",
+        UNSUPPORTED_STATUS: "UNSUPPORTED_STATUS",
+        NOT_STRUCTURE_QUALIFIED: "NOT_STRUCTURE_QUALIFIED",
+        NOT_STRUCTURE_SIGNIFICANT: "NOT_STRUCTURE_SIGNIFICANT",
+        MISSING_STRUCTURE_EVENT: "MISSING_STRUCTURE_EVENT",
+        INVALID_TIME: "INVALID_TIME",
+        INVALID_BOUNDS: "INVALID_BOUNDS",
+        INVALID_SIGNIFICANCE: "INVALID_SIGNIFICANCE",
+        INVALID_ZONE_HEIGHT_ATR: "INVALID_ZONE_HEIGHT_ATR",
+        INVALID_ATR: "INVALID_ATR",
+        DIRECTION_MISMATCH: "DIRECTION_MISMATCH",
+        INVALID_PRICE_SIDE: "INVALID_PRICE_SIDE"
     });
 
     let currentSetup = null;
@@ -70,20 +110,49 @@
         return finitePositive(atr) ? atr : null;
     }
 
-    function normalizeSetupZone(zone, expectedKind, fallbackATR) {
-        if (!zone || zone.kind !== expectedKind || !["ORDER_BLOCK", "FVG"].includes(zone.kind) ||
-            !["BULLISH", "BEARISH"].includes(zone.type) ||
-            !["ACTIVE", "TOUCHED"].includes(zone.status) || zone.structureQualified !== true ||
-            zone.structureSignificant !== true || typeof zone.structureEventId !== "string" ||
-            !zone.structureEventId.trim() || typeof zone.id !== "string" || !zone.id.trim() ||
-            !finitePositive(zone.startTime) || !finitePositive(zone.confirmationTime) ||
-            !Number.isFinite(zone.structureSignificanceScore) ||
-            !Number.isFinite(zone.zoneHeightATR) || zone.zoneHeightATR < 0) return null;
+    function getRejectedZoneSample(zone) {
+        return {
+            id: typeof zone?.id === "string" ? zone.id : null,
+            kind: typeof zone?.kind === "string" ? zone.kind : null,
+            type: typeof zone?.type === "string" ? zone.type : null,
+            status: typeof zone?.status === "string" ? zone.status : null
+        };
+    }
+
+    function inspectSetupZone(zone, expectedKind, fallbackATR) {
+        const reject = reason => ({
+            accepted: false, reason, zone: null, sample: getRejectedZoneSample(zone)
+        });
+        if (!zone || typeof zone !== "object" || Array.isArray(zone))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_ZONE);
+        if (typeof zone.id !== "string" || !zone.id.trim())
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_ID);
+        if (zone.kind !== expectedKind || !["ORDER_BLOCK", "FVG"].includes(zone.kind))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.WRONG_KIND);
+        if (!["BULLISH", "BEARISH"].includes(zone.type))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_DIRECTION);
+        if (!["ACTIVE", "TOUCHED"].includes(zone.status))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.UNSUPPORTED_STATUS);
+        if (zone.structureQualified !== true)
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.NOT_STRUCTURE_QUALIFIED);
+        if (zone.structureSignificant !== true)
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.NOT_STRUCTURE_SIGNIFICANT);
+        if (typeof zone.structureEventId !== "string" || !zone.structureEventId.trim())
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.MISSING_STRUCTURE_EVENT);
+        if (!finitePositive(zone.startTime) || !finitePositive(zone.confirmationTime))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_TIME);
         const top = expectedKind === "ORDER_BLOCK" ? zone.high : zone.top;
         const bottom = expectedKind === "ORDER_BLOCK" ? zone.low : zone.bottom;
+        if (!finitePositive(top) || !finitePositive(bottom) || top < bottom)
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_BOUNDS);
+        if (!Number.isFinite(zone.structureSignificanceScore))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_SIGNIFICANCE);
+        if (!Number.isFinite(zone.zoneHeightATR) || zone.zoneHeightATR < 0)
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_ZONE_HEIGHT_ATR);
         const atr = finitePositive(zone.structureATR) ? zone.structureATR : fallbackATR;
-        if (!finitePositive(top) || !finitePositive(bottom) || top < bottom || !finitePositive(atr)) return null;
-        return {
+        if (!finitePositive(atr))
+            return reject(HND_SETUP_ZONE_REJECTION_REASONS.INVALID_ATR);
+        const normalizedZone = {
             id: zone.id, kind: zone.kind, type: zone.type, status: zone.status, top, bottom,
             midpoint: (top + bottom) / 2,
             touches: Number.isFinite(zone.touches) && zone.touches >= 0 ? zone.touches : 0,
@@ -99,6 +168,11 @@
             qualificationVersion: typeof zone.qualificationVersion === "string" ? zone.qualificationVersion : null,
             startTime: zone.startTime, confirmationTime: zone.confirmationTime
         };
+        return { accepted: true, reason: null, zone: normalizedZone };
+    }
+
+    function normalizeSetupZone(zone, expectedKind, fallbackATR) {
+        return inspectSetupZone(zone, expectedKind, fallbackATR).zone;
     }
 
     function getSetupZoneDistance(price, zone) {
@@ -153,13 +227,91 @@
         };
     }
 
-    function buildConfluenceCandidates(orderBlocks, fvgs, direction, price, atr) {
+    function addSetupRejectedSample(debug, sample) {
+        if (!debug || debug.rejectedSamples.length >= HND_SETUP_DEBUG_MAX_REJECTED_SAMPLES) return;
+        const finiteOrNull = value => Number.isFinite(value) ? value : null;
+        debug.rejectedSamples.push({
+            stage: typeof sample?.stage === "string" ? sample.stage : null,
+            reason: typeof sample?.reason === "string" ? sample.reason : null,
+            id: typeof sample?.id === "string" ? sample.id : null,
+            key: typeof sample?.key === "string" ? sample.key : null,
+            kind: typeof sample?.kind === "string" ? sample.kind : null,
+            type: typeof sample?.type === "string" ? sample.type : null,
+            status: typeof sample?.status === "string" ? sample.status : null,
+            sourceType: typeof sample?.sourceType === "string" ? sample.sourceType : null,
+            distanceATR: finiteOrNull(sample?.distanceATR),
+            quality: finiteOrNull(sample?.quality),
+            structureEventId: typeof sample?.structureEventId === "string"
+                ? sample.structureEventId : null,
+            zoneIds: Array.isArray(sample?.zoneIds)
+                ? sample.zoneIds.filter(id => typeof id === "string").slice() : []
+        });
+    }
+
+    function createSetupDebug(input, existingSetup = null) {
+        const orderBlocks = Array.isArray(input.qualifiedPriceZones?.orderBlocks)
+            ? input.qualifiedPriceZones.orderBlocks.length : 0;
+        const fvgs = Array.isArray(input.qualifiedPriceZones?.fvgs)
+            ? input.qualifiedPriceZones.fvgs.length : 0;
+        const signal = typeof input.analysis?.signal === "string" ? input.analysis.signal : null;
+        const expectedDirection = signal === "LONG" ? "LONG" : signal === "SHORT" ? "SHORT" : null;
+        const expectedZoneType = expectedDirection === "LONG" ? "BULLISH"
+            : expectedDirection === "SHORT" ? "BEARISH" : null;
+        const validationReasons = {};
+        Object.values(HND_SETUP_ZONE_REJECTION_REASONS).slice(0, 13)
+            .forEach(reason => { validationReasons[reason] = 0; });
+        return {
+            version: HND_SETUP_DEBUG_VERSION,
+            symbol: String(input.symbol || ""),
+            interval: String(input.interval || ""),
+            price: Number.isFinite(input.price) ? input.price : null,
+            signal,
+            expectedDirection,
+            expectedZoneType,
+            evaluatedAt: Date.now(),
+            primaryReason: null,
+            existingSetup: {
+                present: Boolean(existingSetup),
+                id: existingSetup?.id ?? null,
+                key: existingSetup?.key ?? null,
+                state: existingSetup?.state ?? null
+            },
+            source: { orderBlocks, fvgs, total: orderBlocks + fvgs },
+            validation: {
+                acceptedOrderBlocks: 0, acceptedFVGs: 0, acceptedTotal: 0,
+                rejectedTotal: 0, reasons: validationReasons
+            },
+            direction: { matchedOrderBlocks: 0, matchedFVGs: 0, matchedTotal: 0, rejected: 0 },
+            priceSide: { accepted: 0, rejected: 0 },
+            confluence: {
+                pairsChecked: 0, sameDirectionPairs: 0, sameEventPairs: 0,
+                overlappingPairs: 0, candidates: 0
+            },
+            singleCandidates: { orderBlocks: 0, fvgs: 0, total: 0 },
+            distance: { maxATR: HND_SETUP_MAX_DISTANCE_ATR, accepted: 0, rejected: 0 },
+            quality: { minimum: HND_SETUP_MIN_QUALITY, accepted: 0, rejected: 0 },
+            consumed: { accepted: 0, rejected: 0 },
+            final: { candidates: 0, selectedKey: null, selectedQuality: null, selectedSourceType: null },
+            topCandidates: [],
+            rejectedSamples: []
+        };
+    }
+
+    function buildConfluenceCandidates(orderBlocks, fvgs, direction, price, atr, debug = null) {
         const candidates = [];
         orderBlocks.forEach(ob => fvgs.forEach(fvg => {
-            if (ob.type !== fvg.type || ob.structureEventId !== fvg.structureEventId ||
-                Math.max(ob.bottom, fvg.bottom) > Math.min(ob.top, fvg.top)) return;
+            if (debug) debug.confluence.pairsChecked += 1;
+            if (ob.type !== fvg.type) return;
+            if (debug) debug.confluence.sameDirectionPairs += 1;
+            if (ob.structureEventId !== fvg.structureEventId) return;
+            if (debug) debug.confluence.sameEventPairs += 1;
+            if (Math.max(ob.bottom, fvg.bottom) > Math.min(ob.top, fvg.top)) return;
+            if (debug) debug.confluence.overlappingPairs += 1;
             const candidate = makeCandidate([ob, fvg], "OB_FVG_CONFLUENCE", direction, price, atr);
-            if (candidate) candidates.push(candidate);
+            if (candidate) {
+                candidates.push(candidate);
+                if (debug) debug.confluence.candidates += 1;
+            }
         }));
         return candidates;
     }
@@ -191,34 +343,185 @@
             second.structureConfirmationIndex - first.structureConfirmationIndex || first.key.localeCompare(second.key);
     }
 
-    function buildCandidates(input = {}) {
+    function buildCandidatesDetailed(input = {}) {
+        const debug = createSetupDebug(input);
         const price = input.price;
         const direction = input.analysis?.signal === "LONG" ? "LONG"
             : input.analysis?.signal === "SHORT" ? "SHORT" : null;
-        if (!direction || !finitePositive(price)) return [];
+        if (!direction) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.WAIT_SIGNAL;
+            return { candidates: [], debug };
+        }
+        if (!finitePositive(price)) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.INVALID_PRICE;
+            return { candidates: [], debug };
+        }
+        if (!debug.source.total) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.NO_SOURCE_ZONES;
+            return { candidates: [], debug };
+        }
         const fallbackATR = calculateSetupATR(input.candles);
         const expectedType = direction === "LONG" ? "BULLISH" : "BEARISH";
         const zones = input.qualifiedPriceZones || {};
-        const normalizeList = (list, kind) => (Array.isArray(list) ? list : [])
-            .map(zone => normalizeSetupZone(zone, kind, fallbackATR)).filter(Boolean)
-            .filter(zone => zone.type === expectedType)
-            .filter(zone => direction === "LONG"
+        const inspectList = (list, kind) => {
+            const accepted = [];
+            (Array.isArray(list) ? list : []).forEach(rawZone => {
+                const inspection = inspectSetupZone(rawZone, kind, fallbackATR);
+                if (inspection.accepted) {
+                    accepted.push(inspection.zone);
+                    if (kind === "ORDER_BLOCK") debug.validation.acceptedOrderBlocks += 1;
+                    else debug.validation.acceptedFVGs += 1;
+                } else {
+                    debug.validation.rejectedTotal += 1;
+                    debug.validation.reasons[inspection.reason] += 1;
+                    addSetupRejectedSample(debug, {
+                        stage: "VALIDATION", reason: inspection.reason, ...inspection.sample
+                    });
+                }
+            });
+            return accepted;
+        };
+        const validOrderBlocks = inspectList(zones.orderBlocks, "ORDER_BLOCK");
+        const validFVGs = inspectList(zones.fvgs, "FVG");
+        debug.validation.acceptedTotal = validOrderBlocks.length + validFVGs.length;
+        if (!debug.validation.acceptedTotal) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.NO_VALID_QUALIFIED_ZONES;
+            return { candidates: [], debug };
+        }
+        const directionFilter = (list, kind) => list.filter(zone => {
+            if (zone.type === expectedType) return true;
+            debug.direction.rejected += 1;
+            addSetupRejectedSample(debug, {
+                stage: "DIRECTION", reason: HND_SETUP_ZONE_REJECTION_REASONS.DIRECTION_MISMATCH,
+                id: zone.id, kind: zone.kind, type: zone.type, status: zone.status,
+                structureEventId: zone.structureEventId
+            });
+            return false;
+        });
+        const directionOrderBlocks = directionFilter(validOrderBlocks, "ORDER_BLOCK");
+        const directionFVGs = directionFilter(validFVGs, "FVG");
+        debug.direction.matchedOrderBlocks = directionOrderBlocks.length;
+        debug.direction.matchedFVGs = directionFVGs.length;
+        debug.direction.matchedTotal = directionOrderBlocks.length + directionFVGs.length;
+        if (!debug.direction.matchedTotal) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.NO_DIRECTION_MATCH;
+            return { candidates: [], debug };
+        }
+        const priceSideFilter = list => list.filter(zone => {
+            const accepted = direction === "LONG"
                 ? price >= zone.bottom - zone.structureATR * HND_SETUP_INVALIDATION_BUFFER_ATR
-                : price <= zone.top + zone.structureATR * HND_SETUP_INVALIDATION_BUFFER_ATR);
-        const orderBlocks = normalizeList(zones.orderBlocks, "ORDER_BLOCK");
-        const fvgs = normalizeList(zones.fvgs, "FVG");
-        const raw = buildConfluenceCandidates(orderBlocks, fvgs, direction, price, fallbackATR)
-            .concat(orderBlocks.map(zone => makeCandidate([zone], "ORDER_BLOCK", direction, price, fallbackATR)))
-            .concat(fvgs.map(zone => makeCandidate([zone], "FVG", direction, price, fallbackATR)))
-            .filter(Boolean).filter(candidate => candidate.distanceATR <= HND_SETUP_MAX_DISTANCE_ATR);
+                : price <= zone.top + zone.structureATR * HND_SETUP_INVALIDATION_BUFFER_ATR;
+            if (accepted) debug.priceSide.accepted += 1;
+            else {
+                debug.priceSide.rejected += 1;
+                addSetupRejectedSample(debug, {
+                    stage: "PRICE_SIDE", reason: HND_SETUP_ZONE_REJECTION_REASONS.INVALID_PRICE_SIDE,
+                    id: zone.id, kind: zone.kind, type: zone.type, status: zone.status,
+                    structureEventId: zone.structureEventId
+                });
+            }
+            return accepted;
+        });
+        const orderBlocks = priceSideFilter(directionOrderBlocks);
+        const fvgs = priceSideFilter(directionFVGs);
+        if (!debug.priceSide.accepted) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.ALL_ZONES_INVALID_PRICE_SIDE;
+            return { candidates: [], debug };
+        }
+        const confluence = buildConfluenceCandidates(
+            orderBlocks, fvgs, direction, price, fallbackATR, debug
+        );
+        const singleOrderBlocks = orderBlocks.map(zone =>
+            makeCandidate([zone], "ORDER_BLOCK", direction, price, fallbackATR)
+        ).filter(Boolean);
+        const singleFVGs = fvgs.map(zone =>
+            makeCandidate([zone], "FVG", direction, price, fallbackATR)
+        ).filter(Boolean);
+        debug.singleCandidates.orderBlocks = singleOrderBlocks.length;
+        debug.singleCandidates.fvgs = singleFVGs.length;
+        debug.singleCandidates.total = singleOrderBlocks.length + singleFVGs.length;
+        const raw = confluence.concat(singleOrderBlocks, singleFVGs).filter(Boolean);
+        if (!raw.length) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.NO_CANDIDATES;
+            return { candidates: [], debug };
+        }
         const mtfAlignment = getSetupMTFAlignment(input.mtfState, direction);
-        return raw.map(candidate => {
+        const scored = raw.map(candidate => {
             candidate.mtfAlignment = mtfAlignment;
             candidate.quality = calculateSetupQuality(candidate, { analysis: input.analysis, mtfAlignment });
             candidate.key = createSetupKey(candidate, input.symbol, input.interval);
             return candidate;
-        }).filter(candidate => candidate.quality >= HND_SETUP_MIN_QUALITY &&
-            !consumedSetupKeys.has(candidate.key)).sort(compareSetupCandidates).map(clone);
+        });
+        const distanceAccepted = scored.filter(candidate => {
+            const accepted = candidate.distanceATR <= HND_SETUP_MAX_DISTANCE_ATR;
+            if (accepted) debug.distance.accepted += 1;
+            else {
+                debug.distance.rejected += 1;
+                addSetupRejectedSample(debug, {
+                    stage: "DISTANCE", reason: "MAX_DISTANCE_EXCEEDED", ...candidate
+                });
+            }
+            return accepted;
+        });
+        const topSorted = scored.slice().sort(compareSetupCandidates);
+        debug.topCandidates = topSorted.slice(0, HND_SETUP_DEBUG_MAX_TOP_CANDIDATES)
+            .map(candidate => ({
+                key: candidate.key, sourceType: candidate.sourceType, direction: candidate.direction,
+                quality: candidate.quality, distanceATR: candidate.distanceATR,
+                entryLow: candidate.entryLow, entryHigh: candidate.entryHigh,
+                entryTarget: candidate.entryTarget, status: candidate.status,
+                structureSignificanceScore: candidate.structureSignificanceScore,
+                zoneHeightATR: candidate.zoneHeightATR,
+                structureEventId: candidate.structureEventId,
+                zoneIds: candidate.zoneIds.slice(),
+                consumed: consumedSetupKeys.has(candidate.key),
+                accepted: candidate.distanceATR <= HND_SETUP_MAX_DISTANCE_ATR &&
+                    candidate.quality >= HND_SETUP_MIN_QUALITY && !consumedSetupKeys.has(candidate.key)
+            }));
+        if (!distanceAccepted.length) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.ALL_CANDIDATES_TOO_FAR;
+            return { candidates: [], debug };
+        }
+        const qualityAccepted = distanceAccepted.filter(candidate => {
+            const accepted = candidate.quality >= HND_SETUP_MIN_QUALITY;
+            if (accepted) debug.quality.accepted += 1;
+            else {
+                debug.quality.rejected += 1;
+                addSetupRejectedSample(debug, {
+                    stage: "QUALITY", reason: "MINIMUM_QUALITY_NOT_MET", ...candidate
+                });
+            }
+            return accepted;
+        });
+        if (!qualityAccepted.length) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.ALL_CANDIDATES_LOW_QUALITY;
+            return { candidates: [], debug };
+        }
+        const accepted = qualityAccepted.filter(candidate => {
+            const consumed = consumedSetupKeys.has(candidate.key);
+            if (consumed) {
+                debug.consumed.rejected += 1;
+                addSetupRejectedSample(debug, {
+                    stage: "CONSUMED", reason: "SETUP_KEY_CONSUMED", ...candidate
+                });
+            } else debug.consumed.accepted += 1;
+            return !consumed;
+        }).sort(compareSetupCandidates);
+        if (!accepted.length) {
+            debug.primaryReason = HND_SETUP_DEBUG_REASONS.ALL_CANDIDATES_CONSUMED;
+            return { candidates: [], debug };
+        }
+        const selected = accepted[0];
+        debug.final.candidates = accepted.length;
+        debug.final.selectedKey = selected.key;
+        debug.final.selectedQuality = selected.quality;
+        debug.final.selectedSourceType = selected.sourceType;
+        debug.primaryReason = HND_SETUP_DEBUG_REASONS.SETUP_CREATED;
+        return { candidates: accepted.map(clone), debug };
+    }
+
+    function buildCandidates(input = {}) {
+        return buildCandidatesDetailed(input).candidates;
     }
 
     function snapshotAnalysis(analysis) {
@@ -322,18 +625,43 @@
 
     function evaluate(input = {}) {
         const candles = normalizeSetupCandles(input.candles);
+        let debug;
         if (currentSetup) {
+            const previousSetup = clone(currentSetup);
+            const previousState = currentSetup.state;
+            debug = createSetupDebug(input, currentSetup);
             const updated = updateExistingSetup(currentSetup, { ...input, candles });
-            if ([HND_SETUP_STATES.INVALIDATED, HND_SETUP_STATES.MISSED].includes(updated.state)) currentSetup = null;
-            else currentSetup = updated;
+            if (updated.state === HND_SETUP_STATES.INVALIDATED) {
+                debug.primaryReason = HND_SETUP_DEBUG_REASONS.SETUP_INVALIDATED;
+                currentSetup = null;
+            } else if (updated.state === HND_SETUP_STATES.MISSED) {
+                debug.primaryReason = HND_SETUP_DEBUG_REASONS.SETUP_MISSED;
+                currentSetup = null;
+            } else {
+                currentSetup = updated;
+                if (previousState !== HND_SETUP_STATES.TRIGGERED &&
+                    updated.state === HND_SETUP_STATES.TRIGGERED) {
+                    debug.primaryReason = HND_SETUP_DEBUG_REASONS.SETUP_TRIGGERED;
+                } else if (previousState === HND_SETUP_STATES.TRIGGERED) {
+                    debug.primaryReason = HND_SETUP_DEBUG_REASONS.EXISTING_SETUP_LOCKED;
+                } else {
+                    debug.primaryReason = HND_SETUP_DEBUG_REASONS.EXISTING_SETUP_UPDATED;
+                }
+            }
+            debug.existingSetup = {
+                present: true, id: previousSetup.id, key: previousSetup.key, state: previousSetup.state
+            };
         } else {
-            const candidates = buildCandidates({ ...input, candles });
+            const detailed = buildCandidatesDetailed({ ...input, candles });
+            const candidates = detailed.candidates;
+            debug = detailed.debug;
             if (candidates.length) currentSetup = createSetup(candidates[0], input, candles);
         }
         lastEvaluation = {
             symbol: String(input.symbol || ""), interval: String(input.interval || ""),
             price: Number.isFinite(input.price) ? input.price : null,
-            status: currentSetup?.state || HND_SETUP_STATES.NO_SETUP, evaluatedAt: Date.now()
+            status: currentSetup?.state || HND_SETUP_STATES.NO_SETUP,
+            evaluatedAt: Date.now(), debug: clone(debug)
         };
         return getState();
     }
@@ -345,6 +673,30 @@
     }
     function getCurrentSetup() { return clone(currentSetup); }
     function getHistory() { return clone(setupHistory); }
+    function getLastDebug() { return clone(lastEvaluation?.debug ?? null); }
+    function explainLastEvaluation() {
+        const debug = getLastDebug();
+        if (!debug) return {
+            primaryReason: null, summary: null, topCandidates: [], rejectedSamples: []
+        };
+        return {
+            primaryReason: debug.primaryReason,
+            summary: {
+                sourceZones: debug.source.total,
+                validZones: debug.validation.acceptedTotal,
+                directionMatched: debug.direction.matchedTotal,
+                priceSideAccepted: debug.priceSide.accepted,
+                confluenceCandidates: debug.confluence.candidates,
+                singleCandidates: debug.singleCandidates.total,
+                distanceAccepted: debug.distance.accepted,
+                qualityAccepted: debug.quality.accepted,
+                consumedRejected: debug.consumed.rejected,
+                acceptedCandidates: debug.final.candidates
+            },
+            topCandidates: clone(debug.topCandidates),
+            rejectedSamples: clone(debug.rejectedSamples)
+        };
+    }
     function getState() {
         return {
             version: HND_SETUP_VERSION, status: currentSetup?.state || HND_SETUP_STATES.NO_SETUP,
@@ -355,6 +707,7 @@
     }
 
     window.HNDSetupEngine = {
-        evaluate, reset, getState, getCurrentSetup, getHistory, buildCandidates, updateExistingSetup
+        evaluate, reset, getState, getCurrentSetup, getHistory, buildCandidates,
+        updateExistingSetup, getLastDebug, explainLastEvaluation, buildCandidatesDetailed
     };
 })();
