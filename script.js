@@ -303,6 +303,21 @@ async function startEngine() {
         }
     } catch (setupError) {
         console.warn("Setup Engine evaluation failed; no raw-price entry was created.", setupError);
+        setupState = {
+            status: "NO_SETUP",
+            currentSetup: null,
+            lastEvaluation: {
+                debug: {
+                    version: "4.1.1",
+                    symbol: cycleCoin,
+                    interval: cycleInterval,
+                    price,
+                    signal: result?.signal ?? null,
+                    primaryReason: "SETUP_ENGINE_ERROR",
+                    errorMessage: String(setupError?.message || setupError).slice(0, 300)
+                }
+            }
+        };
     }
 
     window.HNDLastSetupEvaluation = {
@@ -311,7 +326,9 @@ async function startEngine() {
         price,
         status: setupState?.status ?? "NO_SETUP",
         currentSetup: setupState?.currentSetup
-            ? JSON.parse(JSON.stringify(setupState.currentSetup)) : null
+            ? JSON.parse(JSON.stringify(setupState.currentSetup)) : null,
+        debug: setupState?.lastEvaluation?.debug
+            ? JSON.parse(JSON.stringify(setupState.lastEvaluation.debug)) : null
     };
 
     // Trade varsa kontrol et
