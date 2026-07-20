@@ -231,6 +231,16 @@ try {
     console.warn("Backtest benchmark initialization failed.", benchmarkInitError);
 }
 
+try {
+    window.HNDHistoricalDataLoader?.init?.({
+        getMarketContext() {
+            return { symbol: currentCoin, interval: currentInterval };
+        }
+    });
+} catch (historicalDataInitError) {
+    console.warn("Historical Data Loader initialization failed.", historicalDataInitError);
+}
+
 // Ana Motor
 async function startEngine() {
 
