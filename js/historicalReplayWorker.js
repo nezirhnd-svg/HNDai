@@ -113,7 +113,7 @@ function validateApis() {
 }
 function validateStart(message) {
     var config = message.config || {}, profile = message.replayProfile || {}, columns = message.columns || {};
-    if (![2000, 10000].includes(config.selectedCandleCount)) throw new Error("INVALID_REPLAY_COUNT");
+    if (![2000, 10000, 50000, 100000].includes(config.selectedCandleCount)) throw new Error("INVALID_REPLAY_COUNT");
     if (!Number.isInteger(profile.structureHistoryLimit) || !Number.isInteger(profile.rawZoneHistoryLimit) ||
         !profile.structureQualificationOptions || profile.replayWindowBars !== 500 || profile.mtfMode !== "NOT_INCLUDED") {
         throw new Error("INVALID_REPLAY_PROFILE");
@@ -421,6 +421,7 @@ async function startReplay(message) {
         if (!deterministic) throw new Error("REPLAY_NONDETERMINISTIC");
         var result = copy(first);
         result.summary = Object.assign({}, first.summary, { status: "UNVALIDATED_DIAGNOSTIC",
+            symbol: message.context.symbol, interval: message.context.interval,
             selectedCandleCount: message.config.selectedCandleCount, warmupBars: 500,
             evaluatedBars: message.config.selectedCandleCount - 499, deterministic: true,
             repetitions: repetitions.map(function (item) { return { repetition: item.repetition,

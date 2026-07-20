@@ -1,9 +1,9 @@
 (function () {
     "use strict";
-    const HND_HISTORICAL_REPLAY_VERSION = "4.6.2";
+    const HND_HISTORICAL_REPLAY_VERSION = "4.6.3.3.1";
     const HND_HISTORICAL_REPLAY_SCHEMA_VERSION = 1;
     const HND_HISTORICAL_REPLAY_PROFILE_VERSION = "HND-REPLAY-DIAGNOSTIC-V1";
-    const HND_REPLAY_ALLOWED_COUNTS = Object.freeze([2000, 10000]);
+    const HND_REPLAY_ALLOWED_COUNTS = Object.freeze([2000, 10000, 50000, 100000]);
     const HND_REPLAY_DEFAULT_COUNT = 2000;
     const HND_REPLAY_WINDOW_BARS = 500;
     const HND_REPLAY_MIN_WARMUP_BARS = 500;
@@ -15,7 +15,7 @@
     const HND_REPLAY_MAX_PLAN_EVENTS = 2000;
     const HND_REPLAY_MAX_CHECKPOINTS = 250;
     const HND_REPLAY_CHECKPOINT_INTERVAL_BARS = 100;
-    const HND_REPLAY_STORAGE_KEY = "HNDai.historicalReplayDiagnostics.v4.6.2";
+    const HND_REPLAY_STORAGE_KEY = "HNDai.historicalReplayDiagnostics.v4.6.3.3.1";
     const HND_REPLAY_MAX_STORED_SUMMARIES = 5;
     const COLUMN_KEYS = Object.freeze(["openTime", "open", "high", "low", "close", "volume", "closeTime"]);
     let initialized = false, listenersInitialized = false, worker = null, activeRequestId = null;
@@ -68,6 +68,13 @@
     function validateProfile(profile) { return profile && Number.isInteger(profile.structureHistoryLimit) &&
         Number.isInteger(profile.rawZoneHistoryLimit) && profile.structureQualificationOptions &&
         profile.replayWindowBars === HND_REPLAY_WINDOW_BARS && profile.mtfMode === "NOT_INCLUDED"; }
+    function validate100KParityGate(requested) {
+        if (requested !== 100000) return null;
+        const parity = window.HNDParityEngine?.getState?.();
+        return parity?.liveParity === "LIVE_STATELESS_PARITY_PASS" && parity?.pass2K === true &&
+            parity?.pass10K === true && parity?.overallStatus === "PASS_WITH_MTF_AND_TICK_PENDING" &&
+            parity?.mismatchCount === 0 ? null : "PARITY_REQUIRED_FOR_100K";
+    }
     function debug(reason, error) { lastEvaluation = { debug: { version: HND_HISTORICAL_REPLAY_VERSION,
         profileVersion: HND_HISTORICAL_REPLAY_PROFILE_VERSION, primaryReason: reason,
         requestId: state.activeRequestId, context: { symbol: state.symbol, interval: state.interval,
@@ -87,7 +94,7 @@
     function transferList(columns) { return COLUMN_KEYS.map(key => columns[key].buffer); }
     function terminateWorker() { if (worker) { worker.terminate(); worker = null; } }
     function createWorker(requestId) { terminateWorker();
-        try { worker = new Worker("js/historicalReplayWorker.js?v=4.6.2.2b"); }
+        try { worker = new Worker("js/historicalReplayWorker.js?v=4.6.3.3.1"); }
         catch (error) { debug("WORKER_UNAVAILABLE", error); throw error; }
         worker.onmessage = event => handleWorkerMessage(requestId, event.data || {});
         worker.onerror = event => { if (!isActive(requestId)) return; fail(requestId, "WORKER_IMPORT_FAILED",
@@ -125,6 +132,10 @@
     async function start(config = {}) { if (activeRequestId) return false;
         const requested = Number(config.candleCount ?? document.getElementById("historicalReplayCandleCount")?.value ?? HND_REPLAY_DEFAULT_COUNT);
         if (!HND_REPLAY_ALLOWED_COUNTS.includes(requested)) return false;
+        const parityGateReason = validate100KParityGate(requested);
+        if (parityGateReason) { state.status = "ERROR"; state.phase = parityGateReason;
+            debug(parityGateReason, new Error("Run Live, 2K and 10K parity validation for this market before 100K replay"));
+            render(); return false; }
         lastResult = null;
         state = createState(); state.lastResult = null; state.initialized = initialized;
         state.status = "PREFLIGHT"; state.phase = "PREFLIGHT";
@@ -211,6 +222,7 @@
         let warning = "MTF historical context is not included yet • PARITY REQUIRED";
         if (state.lastEvaluation?.debug?.primaryReason === "DATASET_STALE_BLOCKED") warning = "STALE DATASET BLOCKED";
         if (state.lastEvaluation?.debug?.primaryReason === "DATASET_INVALID") warning = "Prepare a valid dataset with Historical Data Loader first";
+        if (state.lastEvaluation?.debug?.primaryReason === "PARITY_REQUIRED_FOR_100K") warning = "Run Live, 2K and 10K parity validation for this market before 100K replay";
         text("historicalReplayWarning", warning); const progress = document.getElementById("historicalReplayProgress");
         if (progress) progress.value = state.progressPercent; const running = ["PREFLIGHT", "RUNNING", "PAUSED"].includes(state.status);
         [["historicalReplayStart", running], ["historicalReplayPause", state.status !== "RUNNING"],
@@ -249,5 +261,5 @@
     window.HNDHistoricalReplay = { init, start, pause, resume, cancel, reset, getState, getLastResult,
         getTrades, getSetupEvents, getPlanEvents, getTradeEvents, getCheckpoints, exportDiagnosticJSON,
         getLastDebug, explainLastEvaluation };
-    window.HNDHistoricalReplayTest = { sliceDataset, validateDataset, checksumColumns, validateProfile };
+    window.HNDHistoricalReplayTest = { sliceDataset, validateDataset, checksumColumns, validateProfile, validate100KParityGate };
 })();

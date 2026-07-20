@@ -4,7 +4,8 @@
     const VERSION = "4.6.1-integrity-fix";
     const SCHEMA = 1;
     const DEFAULT_COUNT = 50000;
-    const ALLOWED_COUNTS = Object.freeze([2000, 10000, 50000]);
+    const ALLOWED_COUNTS = Object.freeze([2000, 10000, 50000, 100000]);
+    const HND_HISTORICAL_MAX_CANDLE_COUNT = 100000;
     const PAGE_LIMIT = 1000;
     const TIMEOUT_MS = 12000;
     const REQUEST_DELAY_MS = 100;
@@ -199,13 +200,15 @@
         });
     }
 
-    function sliceDataset(original, count, source = "CACHE", fetchMode = "CACHE_HIT", context = {}) {
-        const start = Math.max(0, original.columns.openTime.length - count);
+    function sliceDataset(original, outputCandleCount, source = "CACHE", fetchMode = "CACHE_HIT", context = {}) {
+        const start = Math.max(0, original.columns.openTime.length - outputCandleCount);
         const columns = {};
         for (const key of Object.keys(original.columns)) columns[key] = original.columns[key].slice(start);
         const dataset = { metadata: { ...original.metadata }, columns };
         return finalizeDerivedDatasetMetadata(dataset, {
-            requestedCandleCount: count, source, fetchMode, pageCount: 0, retryCount: 0,
+            requestedCandleCount: Number.isInteger(context.requestedCandleCount)
+                ? context.requestedCandleCount : outputCandleCount,
+            source, fetchMode, pageCount: 0, retryCount: 0,
             serverTime: context.serverTime ?? original.metadata.serverTime,
             latestClosedOpenTime: context.latestClosedOpenTime ?? original.metadata.latestClosedOpenTime
         });
@@ -382,7 +385,7 @@
         if (activeRequest) return Promise.resolve(false);
         const requested = Number(options.candleCount ??
             document.getElementById("historicalDataCandleCount")?.value ?? DEFAULT_COUNT);
-        if (!ALLOWED_COUNTS.includes(requested)) return Promise.resolve(false);
+        if (!ALLOWED_COUNTS.includes(requested) || requested > HND_HISTORICAL_MAX_CANDLE_COUNT) return Promise.resolve(false);
 
         state = createState();
         state.initialized = initialized;
@@ -419,8 +422,9 @@
                     assertActive(requestId);
                     if (error.externallyAborted || error.name === "AbortError") throw error;
                     if (cacheValid(cached, context)) {
-                        const sliced = sliceDataset(cached, Math.min(requested, cached.metadata.candleCount),
-                            "STALE_CACHE", "CACHE_FALLBACK", {});
+                        const outputCandleCount = Math.min(requested, cached.metadata.candleCount);
+                        const sliced = sliceDataset(cached, outputCandleCount,
+                            "STALE_CACHE", "CACHE_FALLBACK", { requestedCandleCount: requested });
                         if (!sliced.validation.valid) throw new Error("Invalid stale historical cache");
                         return ready(requestId, sliced.dataset, "READY_STALE", "READY_STALE");
                     }
@@ -640,7 +644,9 @@
         setText("historicalDataBytes", formatBytes(metadata?.estimatedBytes));
         setText("historicalDataPersistence", state.persistenceAvailable ? "IndexedDB" : "session cache");
         setText("historicalDataWarning", state.status === "READY_PARTIAL" ? "INSUFFICIENT_HISTORY" :
-            state.status === "READY_STALE" ? "STALE CACHE — network unavailable" : "");
+            state.status === "READY_STALE" && metadata?.partial === true
+                ? `STALE CACHE • PARTIAL DATA — ${metadata.candleCount} / ${metadata.requestedCandleCount} candles`
+                : state.status === "READY_STALE" ? "STALE CACHE — network unavailable" : "");
         const progress = document.getElementById("historicalDataProgress");
         if (progress) progress.value = state.progressPercent;
         const active = ["PREFLIGHT", "CHECKING_CACHE", "FETCHING", "PAUSED", "VALIDATING", "CACHING"].includes(state.status);
