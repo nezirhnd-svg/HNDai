@@ -120,6 +120,7 @@ function setupMarketControls() {
 
         window.HNDMarketCatalog?.setSelectedSymbol?.(selectedCoin);
         currentCoin = selectedCoin;
+        window.HNDHistoricalReplay?.reset?.();
         window.HNDTradeEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDTradePlanEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDSetupEngine?.reset?.("SYMBOL_CHANGED");
@@ -141,6 +142,7 @@ function setupMarketControls() {
 
         currentInterval = timeframeConfig.binance;
         currentTradingViewInterval = timeframeConfig.tradingView;
+        window.HNDHistoricalReplay?.reset?.();
         window.HNDTradeEngine?.reset?.("TIMEFRAME_CHANGED");
         window.HNDTradePlanEngine?.reset?.("TIMEFRAME_CHANGED");
         window.HNDSetupEngine?.reset?.("TIMEFRAME_CHANGED");
