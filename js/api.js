@@ -21,11 +21,36 @@ async function fetchBinancePublicJSON(path, options = {}) {
     for (let index = 0; index < HND_BINANCE_PUBLIC_BASE_URLS.length; index++) {
         const baseUrl = HND_BINANCE_PUBLIC_BASE_URLS[index];
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        let timedOut = false;
+        const abortFromExternal = () => controller.abort(options.signal?.reason);
+        if (options.signal?.aborted) {
+            const error = new Error("Request cancelled");
+            error.name = "AbortError";
+            error.externallyAborted = true;
+            error.timeout = false;
+            error.fallbackHostUsed = false;
+            throw error;
+        }
+        options.signal?.addEventListener("abort", abortFromExternal, { once: true });
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
         const startedAt = Date.now();
         try {
             const response = await fetch(`${baseUrl}${path}`, { signal: controller.signal });
-            if (!response.ok) throw new Error(`Public request failed: ${response.status}`);
+            if (!response.ok) {
+                const httpError = new Error(`Public request failed: ${response.status}`);
+                httpError.status = response.status;
+                httpError.host = baseUrl;
+                const retryAfterValue = response.headers?.get?.("retry-after");
+                const retryAfterSeconds = Number(retryAfterValue);
+                const retryAfterDate = Date.parse(retryAfterValue || "");
+                httpError.retryAfterMs = Number.isFinite(retryAfterSeconds)
+                    ? Math.max(0, retryAfterSeconds * 1000)
+                    : Number.isFinite(retryAfterDate) ? Math.max(0, retryAfterDate - Date.now()) : 0;
+                httpError.timeout = false;
+                httpError.externallyAborted = false;
+                httpError.fallbackHostUsed = index > 0;
+                throw httpError;
+            }
             const data = await response.json();
             lastBinancePublicRequestMeta = {
                 host: baseUrl,
@@ -36,26 +61,93 @@ async function fetchBinancePublicJSON(path, options = {}) {
             };
             return data;
         } catch (error) {
-            errors.push(error);
-            if (!options.silent && error?.name !== "AbortError") {
+            const externallyAborted = options.signal?.aborted === true;
+            const normalizedError = timedOut
+                ? Object.assign(new Error(`Public request timed out after ${timeoutMs} ms`), {
+                    name: "TimeoutError", timeout: true, externallyAborted: false
+                })
+                : error;
+            normalizedError.timeout = timedOut === true;
+            normalizedError.externallyAborted = externallyAborted;
+            normalizedError.host = normalizedError.host || baseUrl;
+            normalizedError.fallbackHostUsed = index > 0;
+            normalizedError.retryAfterMs = Number(normalizedError.retryAfterMs) || 0;
+            errors.push(normalizedError);
+            if (externallyAborted) {
+                normalizedError.name = "AbortError";
+                normalizedError.timeout = false;
+                throw normalizedError;
+            }
+            if (!options.silent && normalizedError?.name !== "AbortError") {
                 console.warn("Binance public data host was unavailable; trying the next host.");
             }
         } finally {
             clearTimeout(timeoutId);
+            options.signal?.removeEventListener("abort", abortFromExternal);
         }
     }
 
     const finalError = errors.at(-1) || new Error("Binance public data unavailable");
     lastBinancePublicRequestMeta = {
-        host: null,
-        fallbackHostUsed: HND_BINANCE_PUBLIC_BASE_URLS.length > 1,
+        host: finalError.host || null,
+        fallbackHostUsed: finalError.fallbackHostUsed === true,
         durationMs: null,
         errorName: String(finalError?.name || "Error"),
         errorMessage: String(finalError?.message || "Public data unavailable").slice(0, 300)
     };
-    const error = new Error("Binance public market data is unavailable");
-    error.name = finalError?.name === "AbortError" ? "AbortError" : "PublicMarketDataError";
+    const error = new Error(String(finalError?.message || "Binance public market data is unavailable").slice(0, 300));
+    error.name = finalError?.externallyAborted
+        ? "AbortError"
+        : finalError?.timeout ? "TimeoutError" : "PublicMarketDataError";
+    error.status = Number.isInteger(finalError?.status) ? finalError.status : null;
+    error.retryAfterMs = Number(finalError?.retryAfterMs) || 0;
+    error.host = finalError?.host || null;
+    error.timeout = finalError?.timeout === true;
+    error.externallyAborted = finalError?.externallyAborted === true;
+    error.fallbackHostUsed = finalError?.fallbackHostUsed === true;
     throw error;
+}
+
+async function fetchBinanceServerTime(options = {}) {
+    const response = await fetchBinancePublicJSON("/api/v3/time", options);
+    const serverTime = Number(response?.serverTime);
+    if (!response || typeof response !== "object" || !Number.isInteger(serverTime) || serverTime <= 0) {
+        throw new TypeError("Invalid server time response");
+    }
+    return { serverTime };
+}
+
+async function fetchHistoricalKlinesPage(params, options = {}) {
+    const symbol = String(params?.symbol || "").trim().toUpperCase();
+    const interval = String(params?.interval || "").trim();
+    const supported = new Set(["1m", "5m", "15m", "30m", "1h", "4h", "1d"]);
+    const limit = Number(params?.limit);
+    const startTime = params?.startTime === undefined ? null : Number(params.startTime);
+    const endTime = params?.endTime === undefined ? null : Number(params.endTime);
+    if (!/^[A-Z0-9]+$/.test(symbol) || !supported.has(interval) ||
+        !Number.isInteger(limit) || limit < 1 || limit > 1000 ||
+        (startTime !== null && (!Number.isInteger(startTime) || startTime <= 0)) ||
+        (endTime !== null && (!Number.isInteger(endTime) || endTime <= 0)) ||
+        (startTime !== null && endTime !== null && startTime > endTime)) {
+        throw new TypeError("Invalid historical kline parameters");
+    }
+    const query = new URLSearchParams({ symbol, interval, limit: String(limit) });
+    if (startTime !== null) query.set("startTime", String(startTime));
+    if (endTime !== null) query.set("endTime", String(endTime));
+    const response = await fetchBinancePublicJSON(`/api/v3/klines?${query}`, options);
+    if (!Array.isArray(response)) throw new TypeError("Invalid historical kline response");
+    return response.map(row => {
+        if (!Array.isArray(row) || row.length < 7) throw new TypeError("Invalid historical kline row");
+        const candle = { openTime: Number(row[0]), open: Number(row[1]), high: Number(row[2]),
+            low: Number(row[3]), close: Number(row[4]), volume: Number(row[5]), closeTime: Number(row[6]) };
+        if (!Number.isInteger(candle.openTime) || candle.openTime <= 0 ||
+            !Number.isInteger(candle.closeTime) || candle.closeTime < candle.openTime ||
+            ![candle.open,candle.high,candle.low,candle.close,candle.volume].every(Number.isFinite) ||
+            candle.open <= 0 || candle.high <= 0 || candle.low <= 0 || candle.close <= 0 ||
+            candle.volume < 0 || candle.high < Math.max(candle.open,candle.close) ||
+            candle.low > Math.min(candle.open,candle.close)) throw new TypeError("Invalid historical kline row");
+        return candle;
+    });
 }
 
 async function fetchSpotExchangeInfo(options = {}) {
@@ -222,5 +314,7 @@ window.HNDAPI = {
     fetchCandlesSnapshot,
     fetchSpotExchangeInfo,
     fetchSpot24hrTickers,
-    getLastPublicRequestMeta
+    getLastPublicRequestMeta,
+    fetchBinanceServerTime,
+    fetchHistoricalKlinesPage
 };
