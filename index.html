@@ -204,6 +204,39 @@ TradeAI Pro
 <div class="historical-data-metric"><span>Persistence</span><strong id="historicalDataPersistence">-</strong></div>
 </div><p id="historicalDataWarning" class="historical-data-warning" aria-live="polite"></p>
 </section>
+
+<section class="historical-replay-diagnostics" aria-labelledby="historicalReplayTitle">
+<div class="historical-replay-header"><div><h3 id="historicalReplayTitle">Historical Replay Diagnostics</h3>
+<p>Diagnostic replay only — live parity validation is still required</p></div>
+<span id="historicalReplayStatus" class="historical-replay-status">IDLE</span></div>
+<p class="historical-replay-unvalidated">UNVALIDATED DIAGNOSTIC — do not treat these TP/SL results as verified performance</p>
+<div class="historical-replay-controls"><label for="historicalReplayCandleCount">Replay candles</label>
+<select id="historicalReplayCandleCount"><option value="2000" selected>2,000</option><option value="10000">10,000</option></select></div>
+<div class="historical-replay-progress"><span>Phase: <strong id="historicalReplayPhase">IDLE</strong></span>
+<progress id="historicalReplayProgress" max="100" value="0"></progress></div>
+<div class="historical-replay-actions"><button id="historicalReplayStart" type="button">Start Diagnostic Replay</button>
+<button id="historicalReplayPause" type="button" disabled>Pause</button><button id="historicalReplayResume" type="button" disabled>Resume</button>
+<button id="historicalReplayCancel" type="button" disabled>Cancel</button><button id="historicalReplayExport" type="button" disabled>Export Diagnostic JSON</button></div>
+<div class="historical-replay-grid">
+<div class="historical-replay-metric"><span>Dataset</span><strong id="historicalReplayDataset">-</strong></div>
+<div class="historical-replay-metric"><span>Processed</span><strong id="historicalReplayProcessed">0 / 0</strong></div>
+<div class="historical-replay-metric"><span>Repetition</span><strong id="historicalReplayRepetition">0 / 2</strong></div>
+<div class="historical-replay-metric"><span>Duration</span><strong id="historicalReplayDuration">-</strong></div>
+<div class="historical-replay-metric"><span>Throughput</span><strong id="historicalReplayThroughput">-</strong></div>
+<div class="historical-replay-metric"><span>Deterministic</span><strong id="historicalReplayDeterministic">-</strong></div>
+<div class="historical-replay-metric"><span>Event checksum</span><strong id="historicalReplayEventChecksum">-</strong></div>
+<div class="historical-replay-metric"><span>Closed trades</span><strong id="historicalReplayClosedTrades">-</strong></div>
+<div class="historical-replay-metric"><span>TP — DIAGNOSTIC</span><strong id="historicalReplayTP">-</strong></div>
+<div class="historical-replay-metric"><span>SL — DIAGNOSTIC</span><strong id="historicalReplaySL">-</strong></div>
+<div class="historical-replay-metric"><span>Open trade at end</span><strong id="historicalReplayOpenTrade">-</strong></div>
+<div class="historical-replay-metric"><span>Pending plan at end</span><strong id="historicalReplayPendingPlan">-</strong></div>
+<div class="historical-replay-metric"><span>Win rate</span><strong id="historicalReplayWinRate">-</strong></div>
+<div class="historical-replay-metric"><span>Net R</span><strong id="historicalReplayNetR">-</strong></div>
+</div>
+<p id="historicalReplayWarning" class="historical-replay-warning" aria-live="polite">MTF historical context is not included yet • PARITY REQUIRED</p>
+<div class="historical-replay-table-wrap"><table class="historical-replay-table"><thead><tr><th>Open time</th><th>Close time</th><th>Direction</th><th>Entry</th><th>SL</th><th>TP</th><th>Result</th><th>Exit</th><th>R</th><th>Bars</th></tr></thead>
+<tbody id="historicalReplayTradeBody"><tr><td colspan="10">No terminal diagnostic trades</td></tr></tbody></table></div>
+</section>
 </section>
 
 </section>
@@ -386,6 +419,7 @@ TradeAI Pro
 <script src="js/backtestBenchmark.js"></script>
 <script src="js/historicalDataStore.js"></script>
 <script src="js/historicalDataLoader.js"></script>
+<script src="js/historicalReplayEngine.js"></script>
 
 <script src="script.js"></script>
 

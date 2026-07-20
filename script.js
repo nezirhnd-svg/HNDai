@@ -241,6 +241,45 @@ try {
     console.warn("Historical Data Loader initialization failed.", historicalDataInitError);
 }
 
+try {
+    window.HNDHistoricalReplay?.init?.({
+        async getHistoricalDataset(request = {}) {
+            const symbol = String(request.symbol ?? currentCoin);
+            const interval = String(request.interval ?? currentInterval);
+            const requested = Number(request.requestedCandleCount);
+            const current = window.HNDHistoricalDataLoader?.getDataset?.();
+            const currentUsable = current?.metadata?.symbol === symbol &&
+                current?.metadata?.interval === interval &&
+                current?.metadata?.source !== "STALE_CACHE" &&
+                current?.columns?.openTime instanceof Float64Array &&
+                current.columns.openTime.length >= requested;
+            if (currentUsable) return current;
+            return window.HNDHistoricalDataStore?.getDataset?.(
+                `${symbol}|${interval}`
+            ) ?? null;
+        },
+        getLoaderState() {
+            return window.HNDHistoricalDataLoader?.getState?.() ?? null;
+        },
+        getMarketContext() {
+            return { symbol: currentCoin, interval: currentInterval };
+        },
+        getReplayProfile() {
+            return {
+                structureHistoryLimit: HND_STRUCTURE_HISTORY_LIMIT,
+                rawZoneHistoryLimit: HND_RAW_ZONE_HISTORY_LIMIT,
+                structureQualificationOptions: JSON.parse(JSON.stringify(
+                    HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS
+                )),
+                replayWindowBars: 500,
+                mtfMode: "NOT_INCLUDED"
+            };
+        }
+    });
+} catch (historicalReplayInitError) {
+    console.warn("Historical Replay initialization failed.", historicalReplayInitError);
+}
+
 // Ana Motor
 async function startEngine() {
 
