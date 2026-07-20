@@ -6,6 +6,7 @@ let currentCoin = "BTCUSDT";
 let currentInterval = "15m";
 let currentTradingViewInterval = "15";
 let engineRunning = false;
+let marketControlsInitialized = false;
 
 const TIMEFRAME_MAP = {
     "1": { binance: "1m", tradingView: "1" },
@@ -92,6 +93,7 @@ function initTradingView() {
 }
 
 function setupMarketControls() {
+    if (marketControlsInitialized) return;
     const coinSelect = document.getElementById("coinSelect");
     const timeframeSelect = document.getElementById("timeframe");
 
@@ -108,6 +110,15 @@ function setupMarketControls() {
             return;
         }
 
+        if (window.HNDMarketCatalog &&
+            typeof window.HNDMarketCatalog.isSupportedSymbol === "function" &&
+            !window.HNDMarketCatalog.isSupportedSymbol(selectedCoin)) {
+            coinSelect.value = currentCoin;
+            console.warn("Unsupported coin selection; the previous market was preserved.");
+            return;
+        }
+
+        window.HNDMarketCatalog?.setSelectedSymbol?.(selectedCoin);
         currentCoin = selectedCoin;
         window.HNDTradeEngine?.reset?.("SYMBOL_CHANGED");
         window.HNDTradePlanEngine?.reset?.("SYMBOL_CHANGED");
@@ -138,10 +149,46 @@ function setupMarketControls() {
         initTradingView();
         startEngine();
     });
+    marketControlsInitialized = true;
 }
 
 initTradingView();
 setupMarketControls();
+
+let marketCatalogInitPromise = Promise.resolve(null);
+try {
+    if (window.HNDMarketCatalog &&
+        typeof window.HNDMarketCatalog.init === "function") {
+        marketCatalogInitPromise = window.HNDMarketCatalog.init({
+            selectedSymbol: currentCoin
+        });
+    }
+} catch (marketCatalogInitError) {
+    console.warn(
+        "Market catalog initialization failed; core markets remain available.",
+        marketCatalogInitError
+    );
+}
+
+marketCatalogInitPromise.then(state => {
+    window.HNDLastMarketCatalogEvaluation = {
+        source: state?.source ?? "CORE_ONLY",
+        stale: state?.stale === true,
+        selectedSymbol: state?.selectedSymbol ?? currentCoin,
+        coreCount: state?.coreCount ?? 5,
+        topMarketCount: state?.topMarketCount ?? 0,
+        favoriteCount: state?.favoriteCount ?? 0,
+        totalMarketCount: state?.totalMarketCount ?? 5,
+        cacheUpdatedAt: state?.cacheUpdatedAt ?? null,
+        primaryReason: state?.lastEvaluation?.debug?.primaryReason ?? null,
+        updatedAt: Date.now()
+    };
+}).catch(marketCatalogInitError => {
+    console.warn(
+        "Market catalog initialization failed; core markets remain available.",
+        marketCatalogInitError
+    );
+});
 
 if (
     window.HNDChartEngine &&

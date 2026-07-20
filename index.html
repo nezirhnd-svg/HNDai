@@ -36,13 +36,26 @@ TradeAI Pro
     
 <div class="nav-links">
 
-<select id="coinSelect">
-    <option value="BTCUSDT">BTCUSDT</option>
-    <option value="ETHUSDT">ETHUSDT</option>
-    <option value="SOLUSDT">SOLUSDT</option>
-    <option value="BNBUSDT">BNBUSDT</option>
-    <option value="XRPUSDT">XRPUSDT</option>
+<div class="market-picker">
+<label class="market-search-label" for="marketSearch">
+    <span class="visually-hidden">Market ara</span>
+    <input id="marketSearch" type="search" placeholder="Coin ara"
+        autocomplete="off" spellcheck="false" aria-label="Market ara">
+</label>
+<select id="coinSelect" aria-label="Market seç">
+    <optgroup label="SABİT">
+        <option value="BTCUSDT">BTCUSDT</option>
+        <option value="ETHUSDT">ETHUSDT</option>
+        <option value="SOLUSDT">SOLUSDT</option>
+        <option value="BNBUSDT">BNBUSDT</option>
+        <option value="XRPUSDT">XRPUSDT</option>
+    </optgroup>
 </select>
+<button id="favoriteMarketButton" class="favorite-market-button" type="button"
+    aria-label="Seçili marketi favorilere ekle" aria-pressed="false"
+    title="Favori market">☆</button>
+<span id="marketCatalogStatus" class="market-catalog-status" aria-live="polite">5 market</span>
+</div>
 
 <select id="timeframe">
     <option value="1">1m</option>
@@ -290,6 +303,7 @@ TradeAI Pro
 </main>
 
 <script src="js/api.js"></script>
+<script src="js/marketCatalog.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/smartmoney.js"></script>
 <script src="js/strategy.js"></script>
