@@ -237,6 +237,25 @@ TradeAI Pro
 <div class="historical-replay-table-wrap"><table class="historical-replay-table"><thead><tr><th>Open time</th><th>Close time</th><th>Direction</th><th>Entry</th><th>SL</th><th>TP</th><th>Result</th><th>Exit</th><th>R</th><th>Bars</th></tr></thead>
 <tbody id="historicalReplayTradeBody"><tr><td colspan="10">No terminal diagnostic trades</td></tr></tbody></table></div>
 </section>
+
+<section class="parity-validation" aria-labelledby="parityValidationTitle">
+<div class="parity-validation-header"><div><h3 id="parityValidationTitle">Live / Replay Parity Validation</h3>
+<p>Validates live stateless decisions and historical stateful replay equivalence</p></div>
+<span id="parityValidationStatus" class="parity-validation-status">IDLE</span></div>
+<p class="parity-validation-warning">MTF and tick-level execution parity are still pending</p>
+<div class="parity-validation-progress"><span>Phase: <strong id="parityValidationPhase">IDLE</strong></span><progress id="parityValidationProgress" max="100" value="0"></progress></div>
+<div class="parity-validation-actions"><button id="parityValidateLive" type="button">Validate Live Snapshot</button><button id="parityValidateReplay" type="button">Validate Last Replay</button><button id="parityRunFull" type="button">Run Full Validation</button><button id="parityPause" type="button" disabled>Pause</button><button id="parityResume" type="button" disabled>Resume</button><button id="parityCancel" type="button" disabled>Cancel</button><button id="parityExport" type="button" disabled>Export JSON</button></div>
+<div class="parity-validation-grid">
+<div class="parity-validation-metric"><span>Live capture age</span><strong id="parityLiveCaptureAge">-</strong></div><div class="parity-validation-metric"><span>Live market</span><strong id="parityLiveMarket">-</strong></div><div class="parity-validation-metric"><span>Live candle checksum</span><strong id="parityLiveCandleChecksum">-</strong></div><div class="parity-validation-metric"><span>Analysis</span><strong id="parityLiveAnalysis">-</strong></div>
+<div class="parity-validation-metric"><span>Structure</span><strong id="parityLiveStructure">-</strong></div><div class="parity-validation-metric"><span>Liquidity</span><strong id="parityLiveLiquidity">-</strong></div><div class="parity-validation-metric"><span>Qualified zones</span><strong id="parityLiveZones">-</strong></div><div class="parity-validation-metric"><span>Replay dataset</span><strong id="parityReplayDataset">-</strong></div>
+<div class="parity-validation-metric"><span>Replay candles</span><strong id="parityReplayCandleCount">-</strong></div><div class="parity-validation-metric"><span>Checkpoints</span><strong id="parityReplayCheckpoints">-</strong></div><div class="parity-validation-metric"><span>Setup transitions</span><strong id="parityReplaySetup">-</strong></div><div class="parity-validation-metric"><span>Plan transitions</span><strong id="parityReplayPlan">-</strong></div>
+<div class="parity-validation-metric"><span>Trade transitions</span><strong id="parityReplayTrades">-</strong></div><div class="parity-validation-metric"><span>Replay summary</span><strong id="parityReplaySummary">-</strong></div><div class="parity-validation-metric"><span>Reference deterministic</span><strong id="parityReplayDeterministic">-</strong></div><div class="parity-validation-metric"><span>Mismatch count</span><strong id="parityMismatchCount">0 mismatches</strong></div>
+<div class="parity-validation-metric"><span>Parity digest</span><strong id="parityDigest">-</strong></div><div class="parity-validation-metric"><span>2K parity</span><strong id="parityPass2K">PENDING</strong></div><div class="parity-validation-metric"><span>10K parity</span><strong id="parityPass10K">PENDING</strong></div><div class="parity-validation-metric"><span>Overall</span><strong id="parityOverallStatus">IDLE</strong></div>
+<div class="parity-validation-metric"><span>50K readiness</span><strong id="parity50KReadiness">NOT READY</strong></div>
+</div>
+<p class="parity-validation-pending">Observed live Setup / Plan / Trade state: Observed only — not exact parity-scored</p>
+<div class="parity-mismatch-table-wrap"><table class="parity-mismatch-table"><thead><tr><th>Layer</th><th>Path</th><th>Expected</th><th>Actual</th><th>Candle</th><th>Time</th></tr></thead><tbody id="parityMismatchBody"><tr><td colspan="6">0 mismatches</td></tr></tbody></table></div>
+</section>
 </section>
 
 </section>
@@ -420,6 +439,7 @@ TradeAI Pro
 <script src="js/historicalDataStore.js"></script>
 <script src="js/historicalDataLoader.js"></script>
 <script src="js/historicalReplayEngine.js"></script>
+<script src="js/parityEngine.js"></script>
 
 <script src="script.js"></script>
 

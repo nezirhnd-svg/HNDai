@@ -280,6 +280,46 @@ try {
     console.warn("Historical Replay initialization failed.", historicalReplayInitError);
 }
 
+try {
+    window.HNDParityEngine?.init?.({
+        async getHistoricalDataset(request = {}) {
+            const symbol = String(request.symbol ?? currentCoin);
+            const interval = String(request.interval ?? currentInterval);
+            const requested = Number(request.requestedCandleCount);
+            const current = window.HNDHistoricalDataLoader?.getDataset?.();
+            const currentUsable = current?.metadata?.symbol === symbol &&
+                current?.metadata?.interval === interval &&
+                current?.metadata?.source !== "STALE_CACHE" &&
+                current?.columns?.openTime instanceof Float64Array &&
+                current.columns.openTime.length >= requested;
+            if (currentUsable) return current;
+            return window.HNDHistoricalDataStore?.getDataset?.(`${symbol}|${interval}`) ?? null;
+        },
+        getReplayResult() {
+            return window.HNDHistoricalReplay?.getLastResult?.() ?? null;
+        },
+        getReplayState() {
+            return window.HNDHistoricalReplay?.getState?.() ?? null;
+        },
+        getMarketContext() {
+            return { symbol: currentCoin, interval: currentInterval };
+        },
+        getReplayProfile() {
+            return {
+                structureHistoryLimit: HND_STRUCTURE_HISTORY_LIMIT,
+                rawZoneHistoryLimit: HND_RAW_ZONE_HISTORY_LIMIT,
+                structureQualificationOptions: JSON.parse(JSON.stringify(
+                    HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS
+                )),
+                replayWindowBars: 500,
+                mtfMode: "NOT_INCLUDED"
+            };
+        }
+    });
+} catch (parityInitError) {
+    console.warn("Parity Engine initialization failed.", parityInitError);
+}
+
 // Ana Motor
 async function startEngine() {
 
@@ -593,6 +633,29 @@ async function startEngine() {
         historyCount: Array.isArray(tradeHistoryForChart) ? tradeHistoryForChart.length : 0,
         updatedAt: Date.now()
     };
+
+    if (cycleCoin === currentCoin && cycleInterval === currentInterval) {
+        try {
+            window.HNDParityEngine?.captureLiveCycle?.({
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                candles: loadedCandles,
+                price,
+                structureEvents: cycleStructureEvents,
+                liquidityZones: cycleLiquidityZones,
+                strongestLiquidity: cycleStrongestLiquidity,
+                qualifiedPriceZones: cycleQualifiedPriceZones,
+                analysis: result,
+                setupState,
+                tradePlanState,
+                tradeState,
+                mtfState: window.HNDMTFEngine?.getState?.() ?? null,
+                capturedAt: Date.now()
+            });
+        } catch (parityCaptureError) {
+            console.warn("Parity live capture failed.", parityCaptureError);
+        }
+    }
 
     updateUI(result, price, setupState, tradePlanState, tradeState, journalState);
 
