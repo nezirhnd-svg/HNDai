@@ -69,7 +69,8 @@ TradeAI Pro
 
 <button class="nav-btn">Scanner</button>
 <button class="nav-btn">Signals</button>
-<button class="nav-btn">Backtest</button>
+<button id="backtestBenchmarkButton" class="nav-btn" type="button"
+    aria-controls="backtestBenchmarkPanel" aria-expanded="false">Backtest</button>
 
 </div>
 
@@ -135,6 +136,49 @@ TradeAI Pro
 </tbody>
 </table>
 </div>
+</section>
+
+<section id="backtestBenchmarkPanel" class="backtest-benchmark-panel" hidden
+    aria-labelledby="backtestBenchmarkTitle">
+<div class="backtest-benchmark-header">
+<div>
+<h2 id="backtestBenchmarkTitle">Backtest Capacity Benchmark</h2>
+<p>Capacity benchmark only — not a strategy backtest</p>
+</div>
+<span id="backtestBenchmarkStatus" class="backtest-benchmark-status">IDLE</span>
+</div>
+<div class="backtest-benchmark-progress">
+<div><span>Phase: </span><strong id="backtestBenchmarkPhase">IDLE</strong></div>
+<progress id="backtestBenchmarkProgress" max="100" value="0"></progress>
+<div><span>Processed candles: </span><strong id="backtestBenchmarkProcessed">0 / 10000</strong></div>
+<div><span>Current run: </span><strong id="backtestBenchmarkCurrentRun">0 / 3</strong></div>
+</div>
+<div class="backtest-benchmark-actions">
+<button id="backtestBenchmarkStart" type="button">Start Benchmark</button>
+<button id="backtestBenchmarkPause" type="button" disabled>Pause</button>
+<button id="backtestBenchmarkResume" type="button" disabled>Resume</button>
+<button id="backtestBenchmarkCancel" type="button" disabled>Cancel</button>
+<button id="backtestBenchmarkExport" type="button" disabled>Export JSON</button>
+<button id="backtestBenchmarkClose" type="button">Close</button>
+</div>
+<div class="backtest-benchmark-grid">
+<div class="backtest-benchmark-metric"><span>Median candles/sec</span><strong id="backtestMetricThroughput">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Median 10K duration</span><strong id="backtestMetricDuration">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Variation</span><strong id="backtestMetricVariation">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Max UI frame gap</span><strong id="backtestMetricFrameGap">-</strong></div>
+<div class="backtest-benchmark-metric"><span>JS heap delta</span><strong id="backtestMetricHeap">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Estimated worker memory</span><strong id="backtestMetricWorkerMemory">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Estimated 50K duration</span><strong id="backtestMetric50K">-</strong></div>
+<div class="backtest-benchmark-metric"><span>Estimated 250K duration</span><strong id="backtestMetric250K">-</strong></div>
+<div class="backtest-benchmark-metric backtest-benchmark-recommendation"><span>Recommendation</span><strong id="backtestMetricRecommendation">-</strong></div>
+</div>
+<div class="backtest-benchmark-table-wrap">
+<table class="backtest-benchmark-table">
+<thead><tr><th>Run</th><th>Candles</th><th>Duration</th><th>Candles/sec</th><th>ms/candle</th><th>P95 chunk</th><th>Checksum</th></tr></thead>
+<tbody id="backtestBenchmarkRunBody"><tr><td colspan="7">No completed runs</td></tr></tbody>
+</table>
+</div>
+<p class="backtest-benchmark-warning">250K is an estimate only; no automatic 250K run is performed.</p>
 </section>
 
 </section>
@@ -314,6 +358,7 @@ TradeAI Pro
 <script src="js/mtf.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
+<script src="js/backtestBenchmark.js"></script>
 
 <script src="script.js"></script>
 

@@ -213,6 +213,24 @@ try {
     console.warn("Trade Journal initialization failed.", journalInitError);
 }
 
+try {
+    window.HNDBacktestBenchmark?.init?.({
+        getSeedCandles() {
+            if (!Array.isArray(candles)) return [];
+            return candles.slice(-500).map(candle => ({
+                time: Number(candle.time), open: Number(candle.open),
+                high: Number(candle.high), low: Number(candle.low),
+                close: Number(candle.close), volume: Number(candle.volume)
+            }));
+        },
+        getMarketContext() {
+            return { symbol: currentCoin, interval: currentInterval };
+        }
+    });
+} catch (benchmarkInitError) {
+    console.warn("Backtest benchmark initialization failed.", benchmarkInitError);
+}
+
 // Ana Motor
 async function startEngine() {
 
