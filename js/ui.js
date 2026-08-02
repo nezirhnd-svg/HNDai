@@ -6,6 +6,8 @@ console.log("HNDai UI v4.5");
 
 let tradeJournalExportControlsInitialized = false;
 let structureShadowTelemetryControlsInitialized = false;
+let structureShadowAssessmentControlsInitialized = false;
+const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 
 function setText(id, value) {
     const element = document.getElementById(id);
@@ -251,6 +253,87 @@ function setupStructureShadowTelemetryControls() {
     structureShadowTelemetryControlsInitialized = true;
 }
 
+function formatAssessmentRate(value) {
+    return Number.isFinite(value) ? `${value.toFixed(2)}%` : "-";
+}
+
+function updateStructureShadowAssessmentUI(result = null) {
+    const section = document.getElementById("structureShadowAssessment");
+    const status = result?.status || "NOT ASSESSED";
+    section?.classList?.remove("assessment-not-assessed", "assessment-invalid-snapshot",
+        "assessment-invalid-criteria", "assessment-insufficient-data",
+        "assessment-review-required", "assessment-observation-criteria-met");
+    section?.classList?.add(`assessment-${status.toLowerCase().replaceAll("_", "-")}`);
+    const summary = result?.recomputedSummary || null;
+    setText("structureShadowAssessmentStatus", status);
+    setText("structureShadowAssessmentIntegrity", result
+        ? (result.status === "INVALID_SNAPSHOT" ? result.error || "INVALID" : "VALID") : "-");
+    setText("structureShadowAssessmentObservations", Number.isSafeInteger(summary?.observationCount)
+        ? summary.observationCount : "-");
+    setText("structureShadowAssessmentComparable", Number.isSafeInteger(summary?.comparableCount)
+        ? summary.comparableCount : "-");
+    setText("structureShadowAssessmentMarkets", Array.isArray(summary?.markets)
+        ? `${summary.markets.length} (${summary.markets.join(", ") || "-"})` : "-");
+    setText("structureShadowAssessmentIntervals", Array.isArray(summary?.intervals)
+        ? `${summary.intervals.length} (${summary.intervals.join(", ") || "-"})` : "-");
+    setText("structureShadowAssessmentMismatchRate", formatAssessmentRate(summary?.mismatchRate));
+    setText("structureShadowAssessmentFailureRate", formatAssessmentRate(result?.failureRate));
+    setText("structureShadowAssessmentFailedChecks", Array.isArray(result?.failedChecks) && result.failedChecks.length
+        ? result.failedChecks.join(", ") : result ? "NONE" : "-");
+    setText("structureShadowAssessmentDisclaimer", result?.disclaimer ||
+        "Diagnostic observation criteria only; this result does not authorize entries or trading.");
+}
+
+function showStructureShadowImportError(error) {
+    updateStructureShadowAssessmentUI({
+        status: "INVALID_SNAPSHOT", error, recomputedSummary: null,
+        failureRate: null, failedChecks: [],
+        disclaimer: "Diagnostic observation criteria only; this result does not authorize entries or trading."
+    });
+}
+
+function setupStructureShadowAssessmentControls() {
+    if (structureShadowAssessmentControlsInitialized) return;
+    const assessButton = document.getElementById("assessCurrentStructureShadowObservations");
+    const importButton = document.getElementById("validateStructureShadowDiagnosticJson");
+    const fileInput = document.getElementById("structureShadowDiagnosticJsonFile");
+    if (!assessButton || !importButton || !fileInput) return;
+    assessButton.addEventListener("click", () => {
+        try {
+            const snapshot = window.HNDStructureShadowTelemetry?.exportSnapshot?.();
+            const result = window.HNDStructureShadowAssessment?.assessSnapshot?.(snapshot);
+            if (result) updateStructureShadowAssessmentUI(result);
+            else showStructureShadowImportError("ASSESSMENT_UNAVAILABLE");
+        } catch (error) { showStructureShadowImportError("ASSESSMENT_FAILED"); }
+    });
+    importButton.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+        const file = fileInput.files?.[0];
+        if (!file) { fileInput.value = ""; return; }
+        if (file.size > HND_STRUCTURE_SHADOW_IMPORT_LIMIT) {
+            showStructureShadowImportError("FILE_TOO_LARGE");
+            fileInput.value = "";
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const snapshot = JSON.parse(String(reader.result));
+                const result = window.HNDStructureShadowAssessment?.assessSnapshot?.(snapshot);
+                if (result) updateStructureShadowAssessmentUI(result);
+                else showStructureShadowImportError("ASSESSMENT_UNAVAILABLE");
+            } catch (error) { showStructureShadowImportError("INVALID_JSON"); }
+            finally { fileInput.value = ""; }
+        };
+        reader.onerror = () => {
+            showStructureShadowImportError("FILE_READ_FAILED");
+            fileInput.value = "";
+        };
+        reader.readAsText(file);
+    });
+    structureShadowAssessmentControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -426,6 +509,7 @@ function updateUI(
     updateStructureShadowUI(structureShadow);
     updateStructureShadowTelemetryUI(structureShadowTelemetry);
     setupStructureShadowTelemetryControls();
+    setupStructureShadowAssessmentControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -464,3 +548,4 @@ function updateUI(
 
 setupTradeJournalExportControls();
 setupStructureShadowTelemetryControls();
+setupStructureShadowAssessmentControls();
