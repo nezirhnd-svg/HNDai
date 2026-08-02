@@ -5,6 +5,7 @@
 console.log("HNDai UI v4.5");
 
 let tradeJournalExportControlsInitialized = false;
+let structureShadowTelemetryControlsInitialized = false;
 
 function setText(id, value) {
     const element = document.getElementById(id);
@@ -185,6 +186,71 @@ function updateStructureShadowUI(diagnostic = null) {
         diagnostic?.legacyResult?.candidate?.key ?? "-");
 }
 
+function updateStructureShadowTelemetryUI(summary = null) {
+    const observationCount = Number.isSafeInteger(summary?.observationCount)
+        ? summary.observationCount : 0;
+    const capacity = Number.isSafeInteger(summary?.capacity) ? summary.capacity : 200;
+    setText("structureShadowObservationCount", observationCount);
+    setText("structureShadowComparableCount",
+        Number.isSafeInteger(summary?.comparableCount) ? summary.comparableCount : 0);
+    setText("structureShadowMatchCount",
+        Number.isSafeInteger(summary?.matchCount) ? summary.matchCount : 0);
+    setText("structureShadowMismatchCount",
+        Number.isSafeInteger(summary?.mismatchCount) ? summary.mismatchCount : 0);
+    setText("structureShadowMatchRate",
+        Number.isFinite(summary?.matchRate) ? `${summary.matchRate.toFixed(2)}%` : "-");
+    setText("structureShadowErrorCount",
+        Number.isSafeInteger(summary?.failedCount) ? summary.failedCount : 0);
+    setText("structureShadowNotApplicableCount",
+        Number.isSafeInteger(summary?.notApplicableCount) ? summary.notApplicableCount : 0);
+    setText("structureShadowNotComparableCount",
+        Number.isSafeInteger(summary?.notComparableCount) ? summary.notComparableCount : 0);
+    setText("structureShadowCapacity", `${observationCount} / ${capacity}`);
+    const section = document.getElementById("structureShadowObservations");
+    section?.classList?.remove("telemetry-mismatch", "telemetry-error");
+    if ((summary?.failedCount || 0) > 0) section?.classList?.add("telemetry-error");
+    else if ((summary?.mismatchCount || 0) > 0) section?.classList?.add("telemetry-mismatch");
+}
+
+function downloadStructureShadowDiagnostics() {
+    try {
+        const telemetry = window.HNDStructureShadowTelemetry;
+        if (!telemetry || typeof telemetry.exportSnapshot !== "function") return;
+        const snapshot = telemetry.exportSnapshot();
+        const content = JSON.stringify(snapshot, null, 2);
+        const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const date = new Date().toISOString().slice(0, 10);
+        link.href = url;
+        link.download = `HNDai-structure-shadow-diagnostics-${date}.json`;
+        document.body?.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.warn("Structure Shadow diagnostic export could not be created.");
+    }
+}
+
+function setupStructureShadowTelemetryControls() {
+    if (structureShadowTelemetryControlsInitialized) return;
+    const resetButton = document.getElementById("resetStructureShadowObservations");
+    const exportButton = document.getElementById("exportStructureShadowDiagnostics");
+    if (!resetButton || !exportButton) return;
+    resetButton.addEventListener("click", () => {
+        try {
+            const telemetry = window.HNDStructureShadowTelemetry;
+            telemetry?.reset?.("UI_RESET");
+            updateStructureShadowTelemetryUI(telemetry?.getSummary?.() || null);
+        } catch (error) {
+            console.warn("Structure Shadow telemetry could not be reset.");
+        }
+    });
+    exportButton.addEventListener("click", downloadStructureShadowDiagnostics);
+    structureShadowTelemetryControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -326,7 +392,8 @@ function setupTradeJournalExportControls() {
 
 function updateUI(
     result, price, setupState = null, tradePlanState = null,
-    tradeState = null, journalState = null, structureShadow = null
+    tradeState = null, journalState = null, structureShadow = null,
+    structureShadowTelemetry = null
 ) {
     const signal = document.getElementById("signal");
 
@@ -357,6 +424,8 @@ function updateUI(
     updateJournalPerformanceUI(journalState);
     updateTradeJournalTable(journalState);
     updateStructureShadowUI(structureShadow);
+    updateStructureShadowTelemetryUI(structureShadowTelemetry);
+    setupStructureShadowTelemetryControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -394,3 +463,4 @@ function updateUI(
 }
 
 setupTradeJournalExportControls();
+setupStructureShadowTelemetryControls();

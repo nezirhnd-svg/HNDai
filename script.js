@@ -546,6 +546,7 @@ async function startEngine() {
         loadedCandles, cycleCoin, cycleInterval, Date.now(), structureShadowEnabled);
 
     let setupState = { status: "NO_SETUP", currentSetup: null };
+    let setupEvaluationSucceeded = false;
     try {
         if (window.HNDSetupEngine && typeof window.HNDSetupEngine.evaluate === "function") {
             setupState = window.HNDSetupEngine.evaluate({
@@ -559,6 +560,7 @@ async function startEngine() {
                 featureFlags: structureShadowSetupFields.featureFlags,
                 structureShadowContext: structureShadowSetupFields.structureShadowContext
             });
+            setupEvaluationSucceeded = true;
         }
     } catch (setupError) {
         console.warn("Setup Engine evaluation failed; no raw-price entry was created.", setupError);
@@ -592,6 +594,30 @@ async function startEngine() {
             shadowReadError);
     }
 
+    let structureShadowTelemetry = null;
+    try {
+        const telemetry = window.HNDStructureShadowTelemetry;
+        const evaluationCloseTime =
+            structureShadowSetupFields.structureShadowContext?.evaluationContext?.evaluationCloseTime;
+        if (setupEvaluationSucceeded && structureShadowEnabled && structureShadow &&
+            structureShadow.status !== "DISABLED" &&
+            Number.isSafeInteger(evaluationCloseTime) && evaluationCloseTime > 0 &&
+            telemetry && typeof telemetry.record === "function") {
+            telemetry.record({
+                symbol: cycleCoin,
+                interval: cycleInterval,
+                evaluationCloseTime,
+                observedAt: Date.now(),
+                shadow: JSON.parse(JSON.stringify(structureShadow))
+            });
+        }
+        if (telemetry && typeof telemetry.getSummary === "function") {
+            structureShadowTelemetry = JSON.parse(JSON.stringify(telemetry.getSummary()));
+        }
+    } catch (telemetryError) {
+        console.warn("Structure Shadow telemetry failed; legacy flow will continue.", telemetryError);
+    }
+
     window.HNDLastSetupEvaluation = {
         symbol: cycleCoin,
         interval: cycleInterval,
@@ -602,7 +628,9 @@ async function startEngine() {
         debug: setupState?.lastEvaluation?.debug
             ? JSON.parse(JSON.stringify(setupState.lastEvaluation.debug)) : null,
         structureShadow: structureShadow === null
-            ? null : JSON.parse(JSON.stringify(structureShadow))
+            ? null : JSON.parse(JSON.stringify(structureShadow)),
+        structureShadowTelemetry: structureShadowTelemetry === null
+            ? null : JSON.parse(JSON.stringify(structureShadowTelemetry))
     };
 
     let tradePlanState = { status: "NO_PLAN", currentPlan: null };
@@ -763,7 +791,7 @@ async function startEngine() {
     }
 
     updateUI(result, price, setupState, tradePlanState, tradeState, journalState,
-        structureShadow);
+        structureShadow, structureShadowTelemetry);
 
     } finally {
         engineRunning = false;
