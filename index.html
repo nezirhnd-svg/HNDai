@@ -410,6 +410,31 @@ TradeAI Pro
 <input id="structureShadowCollectionFiles" class="visually-hidden" type="file" accept=".json,application/json" multiple>
 </div>
 </div>
+<div id="structureObservationPlan" class="structure-observation-plan plan-not-started">
+<h3>OBSERVATION PLAN</h3>
+<div class="structure-shadow-grid">
+<p>Plan Status</p><strong id="structureObservationPlanStatus">NOT STARTED</strong>
+<p>Completed Cells</p><strong id="structureObservationCompletedCells">0 / 6</strong>
+<p>Observation Progress</p><strong id="structureObservationProgress">0.00%</strong>
+<p>Comparable Progress</p><strong id="structureComparableProgress">0.00%</strong>
+<p>Remaining Observations</p><strong id="structureObservationRemaining">120</strong>
+<p>Remaining Comparable</p><strong id="structureComparableRemaining">60</strong>
+<p>Out-of-Plan Observations</p><strong id="structureObservationOutOfPlan">0</strong>
+</div>
+<div class="structure-observation-table-wrap">
+<table class="structure-observation-table">
+<thead><tr><th>Market</th><th>TF</th><th>Observations</th><th>Comparable</th><th>Match</th><th>Mismatch</th><th>Errors</th><th>Status</th></tr></thead>
+<tbody id="structureObservationPlanBody"></tbody>
+</table>
+</div>
+<h4>Next Collection Targets</h4>
+<ul id="structureObservationNextTargets"><li>Update plan to calculate targets.</li></ul>
+<div class="structure-shadow-actions">
+<button id="updateStructureObservationPlan" type="button">Update Observation Plan</button>
+<button id="exportStructureObservationProgress" type="button">Export Progress JSON</button>
+</div>
+<p class="structure-shadow-safety">Observation coverage only; completing this plan does not authorize entries or trading.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -532,6 +557,7 @@ TradeAI Pro
 <script src="js/hndai-v1/structureShadowTelemetry.js"></script>
 <script src="js/hndai-v1/structureShadowAssessment.js"></script>
 <script src="js/hndai-v1/structureShadowCollection.js"></script>
+<script src="js/hndai-v1/structureShadowObservationPlan.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
