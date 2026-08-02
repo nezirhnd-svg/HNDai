@@ -401,6 +401,26 @@ box-shadow:0 0 10px rgba(34,197,94,.35);
 .structure-shadow-state-error { border-color:#dc2626; box-shadow:0 0 0 1px #dc262633; }
 .structure-shadow-state-not-applicable { border-color:#64748b; }
 .structure-shadow-state-off { border-color:#334155; }
+.structure-shadow-observations {
+    margin-top:16px;
+    padding-top:14px;
+    border-top:1px solid #334155;
+}
+.structure-shadow-observations h3 { margin:0 0 12px; font-size:13px; }
+.structure-shadow-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.structure-shadow-actions button {
+    padding:8px 10px;
+    color:#e2e8f0;
+    background:#1b2333;
+    border:1px solid #475569;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:12px;
+}
+.structure-shadow-actions button:hover { border-color:#f59e0b; }
+.structure-shadow-actions button:focus-visible { outline:2px solid #f59e0b; outline-offset:2px; }
+.structure-shadow-observations.telemetry-mismatch { border-top-color:#f59e0b; }
+.structure-shadow-observations.telemetry-error { border-top-color:#dc2626; }
 
 .backtest-benchmark-panel {
     margin-top:20px;
