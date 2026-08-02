@@ -8,6 +8,8 @@ let tradeJournalExportControlsInitialized = false;
 let structureShadowTelemetryControlsInitialized = false;
 let structureShadowAssessmentControlsInitialized = false;
 let structureShadowCollectionControlsInitialized = false;
+let structureObservationPlanControlsInitialized = false;
+let lastStructureObservationProgress = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -435,6 +437,92 @@ function setupStructureShadowCollectionControls() {
     structureShadowCollectionControlsInitialized = true;
 }
 
+function formatObservationPlanStatus(status) {
+    return String(status || "NOT_STARTED").replaceAll("_", " ");
+}
+
+function updateStructureObservationPlanUI(result = null) {
+    const value = result || {};
+    const status = value.status || "NOT_STARTED";
+    setText("structureObservationPlanStatus", formatObservationPlanStatus(status));
+    setText("structureObservationCompletedCells", `${value.completedCellCount || 0} / ${value.cellCount || 6}`);
+    setText("structureObservationProgress", `${Number(value.observationProgress || 0).toFixed(2)}%`);
+    setText("structureComparableProgress", `${Number(value.comparableProgress || 0).toFixed(2)}%`);
+    setText("structureObservationRemaining", Number.isSafeInteger(value.observationRemaining) ? value.observationRemaining : 120);
+    setText("structureComparableRemaining", Number.isSafeInteger(value.comparableRemaining) ? value.comparableRemaining : 60);
+    setText("structureObservationOutOfPlan", Number.isSafeInteger(value.outOfPlanObservationCount) ? value.outOfPlanObservationCount : 0);
+    const section = document.getElementById("structureObservationPlan");
+    section?.classList?.remove("plan-not-started", "plan-in-progress", "plan-targets-met", "plan-invalid-snapshot", "plan-invalid-plan");
+    section?.classList?.add(`plan-${status.toLowerCase().replaceAll("_", "-")}`);
+    const body = document.getElementById("structureObservationPlanBody");
+    if (body) {
+        body.replaceChildren();
+        (Array.isArray(value.cells) ? value.cells : []).forEach(cell => {
+            const row = document.createElement("tr");
+            row.classList.add(cell.status === "CELL_TARGET_MET" ? "cell-target-met"
+                : (cell.mismatchCount || cell.failedCount) ? "cell-diagnostic-warning" : "cell-warning");
+            [cell.symbol, cell.interval, `${cell.observationCount}/${cell.observationTarget}`,
+                `${cell.comparableCount}/${cell.comparableTarget}`, cell.matchCount, cell.mismatchCount,
+                cell.failedCount, formatObservationPlanStatus(cell.status)].forEach(content => {
+                const column = document.createElement("td");
+                column.textContent = String(content);
+                row.appendChild(column);
+            });
+            body.appendChild(row);
+        });
+    }
+    const targets = document.getElementById("structureObservationNextTargets");
+    if (targets) {
+        targets.replaceChildren();
+        const items = Array.isArray(value.nextTargets) ? value.nextTargets : [];
+        if (!items.length) {
+            const item = document.createElement("li");
+            item.textContent = status === "TARGETS_MET" ? "All observation targets met." : "No targets calculated.";
+            targets.appendChild(item);
+        } else items.forEach(target => {
+            const item = document.createElement("li");
+            item.textContent = `${target.symbol} ${target.interval} — ${target.observationRemaining} observations, ${target.comparableRemaining} comparable remaining`;
+            targets.appendChild(item);
+        });
+    }
+}
+
+function downloadStructureObservationProgress() {
+    if (!lastStructureObservationProgress) {
+        setText("structureObservationPlanStatus", "NOT EVALUATED");
+        return;
+    }
+    try {
+        const blob = new Blob([JSON.stringify(lastStructureObservationProgress, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `HNDai-structure-observation-progress-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link);
+        link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { console.warn("Structure observation progress export could not be created."); }
+}
+
+function updateStructureObservationPlanFromCollection() {
+    try {
+        const snapshot = window.HNDStructureShadowCollection?.getSnapshot?.();
+        const result = window.HNDStructureShadowObservationPlan?.evaluateProgress?.(snapshot);
+        if (!result) return;
+        lastStructureObservationProgress = JSON.parse(JSON.stringify(result));
+        updateStructureObservationPlanUI(result);
+    } catch (error) { updateStructureObservationPlanUI({ status: "INVALID_SNAPSHOT" }); }
+}
+
+function setupStructureObservationPlanControls() {
+    if (structureObservationPlanControlsInitialized) return;
+    const updateButton = document.getElementById("updateStructureObservationPlan");
+    const exportButton = document.getElementById("exportStructureObservationProgress");
+    if (!updateButton || !exportButton) return;
+    updateButton.addEventListener("click", updateStructureObservationPlanFromCollection);
+    exportButton.addEventListener("click", downloadStructureObservationProgress);
+    structureObservationPlanControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -612,6 +700,7 @@ function updateUI(
     setupStructureShadowTelemetryControls();
     setupStructureShadowAssessmentControls();
     setupStructureShadowCollectionControls();
+    setupStructureObservationPlanControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -652,3 +741,4 @@ setupTradeJournalExportControls();
 setupStructureShadowTelemetryControls();
 setupStructureShadowAssessmentControls();
 setupStructureShadowCollectionControls();
+setupStructureObservationPlanControls();
