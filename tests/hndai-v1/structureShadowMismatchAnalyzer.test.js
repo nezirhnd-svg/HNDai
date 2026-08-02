@@ -1,0 +1,78 @@
+"use strict";
+const assert=require("assert"),fs=require("fs"),path=require("path"),vm=require("vm");
+const modulePath=path.resolve(__dirname,"../../js/hndai-v1/structureShadowMismatchAnalyzer.js");
+const assessment=require(path.resolve(__dirname,"../../js/hndai-v1/structureShadowAssessment.js"));
+const collection=require(path.resolve(__dirname,"../../js/hndai-v1/structureShadowCollection.js"));
+const telemetry=require(path.resolve(__dirname,"../../js/hndai-v1/structureShadowTelemetry.js"));
+const api=require(modulePath),tests=[];function test(n,f){tests.push({name:n,fn:f});}function clone(v){return JSON.parse(JSON.stringify(v));}function pct(n,d){return d?Math.round(n/d*10000)/100:null;}
+function sh(c="MATCH_ALLOW",over={}){const m={MATCH_ALLOW:["ALLOW","ALLOW",false,"COMPLETED"],MATCH_BLOCK:["BLOCK","BLOCK",false,"COMPLETED"],LEGACY_ALLOW_GATE_BLOCK:["ALLOW","BLOCK",true,"COMPLETED"],LEGACY_BLOCK_GATE_ALLOW:["BLOCK","ALLOW",true,"COMPLETED"],NOT_COMPARABLE:["ALLOW",null,false,"COMPLETED"],NOT_APPLICABLE:[null,null,false,"NOT_APPLICABLE"],PIPELINE_FAILED:["ALLOW",null,false,"FAILED"]}[c];return Object.assign({enabled:true,status:m[3],reason:c==="NOT_APPLICABLE"?"EXISTING_SETUP_EVALUATION":null,mode:"SHADOW",legacyDecision:m[0],gateDecision:m[1],comparison:c,wouldChangeDecision:m[2],gateReason:m[1]?"STRUCTURE_REASON":null,error:c==="PIPELINE_FAILED"?"PIPELINE_ERROR_TEXT":null,failedStage:c==="PIPELINE_FAILED"?"GATE":null,candidateKey:["NOT_APPLICABLE","NOT_COMPARABLE"].includes(c)?null:"KEY"},over);}
+function obs(i,c="MATCH_ALLOW",symbol="BTCUSDT",interval="15m",over={}){const t=1700000000000+i*60000;return{key:`${symbol}|${interval}|${t}`,symbol,interval,evaluationCloseTime:t,observedAt:t+1,shadow:sh(c,over)};}
+function summary(items){const v=items.map(x=>x.shadow.comparison),count=x=>v.filter(y=>y===x).length,ma=count("MATCH_ALLOW"),mb=count("MATCH_BLOCK"),la=count("LEGACY_ALLOW_GATE_BLOCK"),lb=count("LEGACY_BLOCK_GATE_ALLOW"),match=ma+mb,mis=la+lb,comp=match+mis;return{observationCount:items.length,comparableCount:comp,matchCount:match,mismatchCount:mis,failedCount:items.filter(x=>x.shadow.status==="FAILED"||x.shadow.comparison==="PIPELINE_FAILED").length,notApplicableCount:count("NOT_APPLICABLE"),notComparableCount:count("NOT_COMPARABLE"),matchAllowCount:ma,matchBlockCount:mb,legacyAllowGateBlockCount:la,legacyBlockGateAllowCount:lb,matchRate:pct(match,comp),mismatchRate:pct(mis,comp),latestObservation:items.length?clone(items.at(-1)):null,markets:[...new Set(items.map(x=>x.symbol))].sort(),intervals:[...new Set(items.map(x=>x.interval))].sort(),capacity:200,droppedCount:0};}
+function snap(items=[]){const s=clone(items).sort((a,b)=>a.evaluationCloseTime-b.evaluationCloseTime||a.symbol.localeCompare(b.symbol)||a.interval.localeCompare(b.interval)||a.key.localeCompare(b.key));return{schemaVersion:"HND_STRUCTURE_SHADOW_TELEMETRY_V1",summary:summary(s),observations:s};}
+function mixed(){return[obs(1,"MATCH_ALLOW"),obs(2,"MATCH_BLOCK","ETHUSDT","1h"),obs(3,"LEGACY_ALLOW_GATE_BLOCK"),obs(4,"LEGACY_BLOCK_GATE_ALLOW","ETHUSDT","1h"),obs(5,"PIPELINE_FAILED","SOLUSDT"),obs(6,"NOT_COMPARABLE"),obs(7,"NOT_APPLICABLE","SOLUSDT","1h")];}
+test("CommonJS API works",()=>assert.strictEqual(api.getSchemaVersion(),"HND_STRUCTURE_SHADOW_MISMATCH_ANALYZER_V1"));
+test("browser global API works",()=>{const window={HNDStructureShadowAssessment:assessment};vm.runInNewContext(fs.readFileSync(modulePath,"utf8"),{window,JSON,Object,Array,Number,Math,Set,Map});assert.strictEqual(window.HNDStructureShadowMismatchAnalyzer.getSchemaVersion(),api.getSchemaVersion());});
+test("public API exact",()=>assert.deepStrictEqual(Object.keys(api).sort(),["getSchemaVersion","getVocabulary","analyzeSnapshot"].sort()));
+test("validator actually used",()=>{let calls=0;const window={HNDStructureShadowAssessment:{validateSnapshot(){calls++;return{valid:true};}}};vm.runInNewContext(fs.readFileSync(modulePath,"utf8"),{window,JSON,Object,Array,Number,Math,Set,Map});window.HNDStructureShadowMismatchAnalyzer.analyzeSnapshot(snap());assert.strictEqual(calls,1);});
+test("invalid snapshot status",()=>assert.strictEqual(api.analyzeSnapshot({}).status,"INVALID_SNAPSHOT"));
+test("empty status",()=>assert.strictEqual(api.analyzeSnapshot(snap()).status,"NO_OBSERVATIONS"));
+test("not comparable only status",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_COMPARABLE")])).status,"NO_COMPARABLE"));
+test("not applicable only status",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_APPLICABLE")])).status,"NO_COMPARABLE"));
+test("match only status",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1),obs(2,"MATCH_BLOCK")])).status,"MATCH_ONLY"));
+test("mismatch review status",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK")])).status,"REVIEW_ITEMS_FOUND"));
+test("failure status wins mismatch",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK"),obs(2,"PIPELINE_FAILED")])).status,"FAILURES_FOUND"));
+test("MATCH_ALLOW category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1)])).byCategory[0].key,"MATCH"));
+test("MATCH_BLOCK category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"MATCH_BLOCK")])).byCategory[0].key,"MATCH"));
+test("legacy allow gate blocked category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK")])).reviewItems[0].category,"LEGACY_ALLOWED_GATE_BLOCKED"));
+test("legacy block gate allowed category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_BLOCK_GATE_ALLOW")])).reviewItems[0].category,"LEGACY_BLOCKED_GATE_ALLOWED"));
+test("pipeline category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"PIPELINE_FAILED")])).reviewItems[0].category,"PIPELINE_FAILURE"));
+test("not comparable category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_COMPARABLE")])).reviewItems[0].category,"NO_COMPARABLE_CANDIDATE"));
+test("not applicable category",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_APPLICABLE")])).reviewItems[0].category,"EXISTING_SETUP_NOT_APPLICABLE"));
+test("match counter",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).matchCount,2));
+test("mismatch counter",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).mismatchCount,2));
+test("failure counter",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).failureCount,1));
+test("not comparable counter",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).notComparableCount,1));
+test("not applicable counter",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).notApplicableCount,1));
+test("match rate",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).matchRate,50));
+test("mismatch rate",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).mismatchRate,50));
+test("zero denominator rates null",()=>assert.deepStrictEqual([api.analyzeSnapshot(snap()).matchRate,api.analyzeSnapshot(snap()).mismatchRate],[null,null]));
+test("byComparison grouped",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byComparison.length,7));
+test("byCategory grouped",()=>assert.ok(api.analyzeSnapshot(snap(mixed())).byCategory.some(x=>x.key==="PIPELINE_FAILURE")));
+test("byPriority grouped",()=>assert.ok(api.analyzeSnapshot(snap(mixed())).byPriority.some(x=>x.key==="HIGH")));
+test("byMarket grouped",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byMarket[0].key,"BTCUSDT"));
+test("byInterval grouped",()=>assert.ok(api.analyzeSnapshot(snap(mixed())).byInterval.some(x=>x.key==="1h")));
+test("byMarketInterval grouped",()=>assert.ok(api.analyzeSnapshot(snap(mixed())).byMarketInterval.some(x=>x.key==="ETHUSDT|1h")));
+test("gate reason grouped",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byGateReason[0].key,"STRUCTURE_REASON"));
+test("error grouped",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byError[0].key,"PIPELINE_ERROR_TEXT"));
+test("failed stage grouped",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byFailedStage[0].key,"GATE"));
+test("group sorted count then key",()=>{const r=api.analyzeSnapshot(snap([obs(1),obs(2,"MATCH_BLOCK"),obs(3,"NOT_COMPARABLE")]));assert.deepStrictEqual(r.byComparison.map(x=>x.key),["MATCH_ALLOW","MATCH_BLOCK","NOT_COMPARABLE"]);});
+test("group percentage uses observations",()=>assert.strictEqual(api.analyzeSnapshot(snap(mixed())).byComparison.find(x=>x.key==="MATCH_ALLOW").percentage,14.29));
+test("pipeline error evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"PIPELINE_FAILED")])).reviewItems[0].evidenceCodes.includes("PIPELINE_ERROR")));
+test("failed stage evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"PIPELINE_FAILED")])).reviewItems[0].evidenceCodes.includes("FAILED_STAGE")));
+test("gate reason evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK")])).reviewItems[0].evidenceCodes.includes("GATE_REASON")));
+test("null candidate evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"NOT_COMPARABLE")])).reviewItems[0].evidenceCodes.includes("NO_CANDIDATE")));
+test("existing setup evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"NOT_APPLICABLE")])).reviewItems[0].evidenceCodes.includes("EXISTING_SETUP_EVALUATION")));
+test("decision divergence evidence",()=>assert.ok(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK")])).reviewItems[0].evidenceCodes.includes("DECISION_DIVERGENCE")));
+test("no direct evidence does not invent cause",()=>{const i=obs(1,"NOT_APPLICABLE");i.shadow.reason="OTHER";const r=api.analyzeSnapshot(snap([i]));assert.deepStrictEqual(r.reviewItems[0].evidenceCodes,["NO_DIRECT_EVIDENCE"]);});
+test("pipeline priority high",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"PIPELINE_FAILED")])).reviewItems[0].priority,"HIGH"));
+test("legacy allow priority high",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK")])).reviewItems[0].priority,"HIGH"));
+test("legacy block priority medium",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"LEGACY_BLOCK_GATE_ALLOW")])).reviewItems[0].priority,"MEDIUM"));
+test("not comparable priority low",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_COMPARABLE")])).reviewItems[0].priority,"LOW"));
+test("not applicable priority info",()=>assert.strictEqual(api.analyzeSnapshot(snap([obs(1,"NOT_APPLICABLE")])).reviewItems[0].priority,"INFO"));
+test("review sorting priority first",()=>{const r=api.analyzeSnapshot(snap([obs(1,"NOT_COMPARABLE"),obs(2,"LEGACY_BLOCK_GATE_ALLOW"),obs(3,"PIPELINE_FAILED")]));assert.deepStrictEqual(r.reviewItems.map(x=>x.priority),["HIGH","MEDIUM","LOW"]);});
+test("review sorting newest within priority",()=>{const r=api.analyzeSnapshot(snap([obs(1,"LEGACY_ALLOW_GATE_BLOCK"),obs(2,"PIPELINE_FAILED")]));assert.strictEqual(r.reviewItems[0].evaluationCloseTime,obs(2).evaluationCloseTime);});
+test("review item limit 50",()=>assert.strictEqual(api.analyzeSnapshot(snap(Array.from({length:60},(_,i)=>obs(i+1,"NOT_COMPARABLE")))).reviewItems.length,50));
+test("failure item limit 25",()=>assert.strictEqual(api.analyzeSnapshot(snap(Array.from({length:30},(_,i)=>obs(i+1,"PIPELINE_FAILED")))).failureItems.length,25));
+test("input not mutated",()=>{const s=snap(mixed()),b=clone(s);api.analyzeSnapshot(s);assert.deepStrictEqual(s,b);});
+test("same input deterministic",()=>{const s=snap(mixed());assert.deepStrictEqual(api.analyzeSnapshot(s),api.analyzeSnapshot(s));});
+test("raw snapshot not embedded",()=>assert.ok(!Object.prototype.hasOwnProperty.call(api.analyzeSnapshot(snap(mixed())),"snapshot")));
+test("source filename absent",()=>assert.ok(!JSON.stringify(api.analyzeSnapshot(snap(mixed()))).includes(".json")));
+test("disclaimer denies authorization",()=>assert.match(api.analyzeSnapshot(snap()).disclaimer,/does not change rules or authorize entries/));
+test("live collection and telemetry unchanged",()=>{collection.reset("T");telemetry.reset("T");const c=collection.getSnapshot(),t=telemetry.exportSnapshot();api.analyzeSnapshot(c);assert.deepStrictEqual([collection.getSnapshot(),telemetry.exportSnapshot()],[c,t]);});
+test("module has no network storage enforcement",()=>assert.ok(!/(fetch\(|XMLHttpRequest|localStorage|sessionStorage|TradeEngine|SetupEngine|threshold)/i.test(fs.readFileSync(modulePath,"utf8"))));
+test("UI initial status",()=>assert.match(fs.readFileSync(path.resolve(__dirname,"../../index.html"),"utf8"),/structureMismatchAnalyzerStatus">NOT ANALYZED/));
+test("analyze uses collection snapshot",()=>assert.match(fs.readFileSync(path.resolve(__dirname,"../../js/ui.js"),"utf8"),/HNDStructureShadowMismatchAnalyzer\?\.analyzeSnapshot/));
+test("review table safe DOM",()=>{const u=fs.readFileSync(path.resolve(__dirname,"../../js/ui.js"),"utf8");assert.match(u,/structureMismatchReviewBody/);assert.match(u,/createElement\("td"\)/);assert.ok(!u.includes("innerHTML"));});
+test("export filename exact",()=>assert.match(fs.readFileSync(path.resolve(__dirname,"../../js/ui.js"),"utf8"),/HNDai-structure-mismatch-analysis-\$\{/));
+test("script order correct",()=>{const h=fs.readFileSync(path.resolve(__dirname,"../../index.html"),"utf8");assert.ok(h.indexOf("structureShadowObservationPlan.js")<h.indexOf("structureShadowMismatchAnalyzer.js")&&h.indexOf("structureShadowMismatchAnalyzer.js")<h.indexOf("js/ui.js"));});
+(async()=>{let a=0;for(const t of tests){try{await t.fn();a++;}catch(e){console.error(`FAIL: ${t.name}`);throw e;}}console.log(`Structure Shadow Mismatch Analyzer tests passed: ${tests.length} scenarios, ${a} assertions.`);})().catch(e=>{console.error(e);process.exitCode=1;});

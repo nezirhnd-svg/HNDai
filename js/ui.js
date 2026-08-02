@@ -10,6 +10,8 @@ let structureShadowAssessmentControlsInitialized = false;
 let structureShadowCollectionControlsInitialized = false;
 let structureObservationPlanControlsInitialized = false;
 let lastStructureObservationProgress = null;
+let structureMismatchAnalyzerControlsInitialized = false;
+let lastStructureMismatchAnalysis = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -523,6 +525,83 @@ function setupStructureObservationPlanControls() {
     structureObservationPlanControlsInitialized = true;
 }
 
+function updateMismatchGroupList(id, groups) {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.replaceChildren();
+    const values = Array.isArray(groups) ? groups.slice(0, 5) : [];
+    const rendered = values.length ? values : [{ key: "-", count: 0, percentage: null }];
+    rendered.forEach(group => {
+        const item = document.createElement("li");
+        item.textContent = group.key === "-" ? "-" : `${group.key}: ${group.count} (${Number(group.percentage).toFixed(2)}%)`;
+        list.appendChild(item);
+    });
+}
+
+function updateStructureMismatchAnalyzerUI(result = null) {
+    const value = result || {}, status = value.status || "NOT_ANALYZED";
+    setText("structureMismatchAnalyzerStatus", String(status).replaceAll("_", " "));
+    [["structureMismatchObservationCount","observationCount"],["structureMismatchComparableCount","comparableCount"],
+        ["structureMismatchMatchCount","matchCount"],["structureMismatchCount","mismatchCount"],
+        ["structureMismatchFailureCount","failureCount"],["structureMismatchNotComparableCount","notComparableCount"],
+        ["structureMismatchNotApplicableCount","notApplicableCount"]].forEach(pair =>
+        setText(pair[0], Number.isSafeInteger(value[pair[1]]) ? value[pair[1]] : 0));
+    setText("structureMismatchMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
+    setText("structureMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
+    const section = document.getElementById("structureMismatchDiagnostics");
+    section?.classList?.remove("analyzer-not-analyzed", "analyzer-no-observations", "analyzer-no-comparable",
+        "analyzer-match-only", "analyzer-review-items-found", "analyzer-failures-found", "analyzer-invalid-snapshot");
+    section?.classList?.add(`analyzer-${status.toLowerCase().replaceAll("_", "-")}`);
+    const body = document.getElementById("structureMismatchReviewBody");
+    if (body) {
+        body.replaceChildren();
+        (Array.isArray(value.reviewItems) ? value.reviewItems.slice(0, 50) : []).forEach(review => {
+            const row = document.createElement("tr");
+            row.classList.add(`priority-${review.priority.toLowerCase()}`);
+            [review.priority, review.symbol, review.interval, review.category, review.comparison,
+                review.gateReason || "-", [review.error, review.failedStage].filter(Boolean).join(" / ") || "-",
+                review.suggestedReview].forEach(content => {
+                const column = document.createElement("td"); column.textContent = String(content); row.appendChild(column);
+            });
+            body.appendChild(row);
+        });
+    }
+    updateMismatchGroupList("structureMismatchCategorySummary", value.byCategory);
+    updateMismatchGroupList("structureMismatchGateReasonSummary", value.byGateReason);
+    updateMismatchGroupList("structureMismatchErrorSummary", value.byError);
+    updateMismatchGroupList("structureMismatchFailedStageSummary", value.byFailedStage);
+}
+
+function analyzeStructureShadowCollection() {
+    try {
+        const snapshot = window.HNDStructureShadowCollection?.getSnapshot?.();
+        const result = window.HNDStructureShadowMismatchAnalyzer?.analyzeSnapshot?.(snapshot);
+        if (!result) return;
+        lastStructureMismatchAnalysis = JSON.parse(JSON.stringify(result));
+        updateStructureMismatchAnalyzerUI(result);
+    } catch (error) { updateStructureMismatchAnalyzerUI({ status: "INVALID_SNAPSHOT" }); }
+}
+
+function downloadStructureMismatchAnalysis() {
+    if (!lastStructureMismatchAnalysis) { setText("structureMismatchAnalyzerStatus", "NOT ANALYZED"); return; }
+    try {
+        const blob = new Blob([JSON.stringify(lastStructureMismatchAnalysis, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-structure-mismatch-analysis-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { console.warn("Structure mismatch analysis export could not be created."); }
+}
+
+function setupStructureMismatchAnalyzerControls() {
+    if (structureMismatchAnalyzerControlsInitialized) return;
+    const analyzeButton = document.getElementById("analyzeStructureShadowCollection");
+    const exportButton = document.getElementById("exportStructureMismatchAnalysis");
+    if (!analyzeButton || !exportButton) return;
+    analyzeButton.addEventListener("click", analyzeStructureShadowCollection);
+    exportButton.addEventListener("click", downloadStructureMismatchAnalysis);
+    structureMismatchAnalyzerControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -701,6 +780,7 @@ function updateUI(
     setupStructureShadowAssessmentControls();
     setupStructureShadowCollectionControls();
     setupStructureObservationPlanControls();
+    setupStructureMismatchAnalyzerControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -742,3 +822,4 @@ setupStructureShadowTelemetryControls();
 setupStructureShadowAssessmentControls();
 setupStructureShadowCollectionControls();
 setupStructureObservationPlanControls();
+setupStructureMismatchAnalyzerControls();
