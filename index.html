@@ -367,6 +367,26 @@ TradeAI Pro
 </div>
 <p class="structure-shadow-safety">Diagnostic agreement rate — not financial performance.</p>
 </div>
+<div id="structureShadowAssessment" class="structure-shadow-assessment assessment-not-assessed">
+<h3>SHADOW ASSESSMENT</h3>
+<div class="structure-shadow-grid">
+<p>Assessment Status</p><strong id="structureShadowAssessmentStatus">NOT ASSESSED</strong>
+<p>Snapshot Integrity</p><strong id="structureShadowAssessmentIntegrity">-</strong>
+<p>Observations</p><strong id="structureShadowAssessmentObservations">-</strong>
+<p>Comparable</p><strong id="structureShadowAssessmentComparable">-</strong>
+<p>Markets</p><strong id="structureShadowAssessmentMarkets">-</strong>
+<p>Intervals</p><strong id="structureShadowAssessmentIntervals">-</strong>
+<p>Mismatch Rate</p><strong id="structureShadowAssessmentMismatchRate">-</strong>
+<p>Failure Rate</p><strong id="structureShadowAssessmentFailureRate">-</strong>
+<p>Failed Checks</p><strong id="structureShadowAssessmentFailedChecks">-</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="assessCurrentStructureShadowObservations" type="button">Assess Current Observations</button>
+<button id="validateStructureShadowDiagnosticJson" type="button">Validate Diagnostic JSON</button>
+<input id="structureShadowDiagnosticJsonFile" class="visually-hidden" type="file" accept=".json,application/json">
+</div>
+<p id="structureShadowAssessmentDisclaimer" class="structure-shadow-safety">Diagnostic observation criteria only; this result does not authorize entries or trading.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -473,7 +493,6 @@ TradeAI Pro
 <script src="js/strategy.js"></script>
 <script src="js/tradeEngine.js"></script>
 <script src="js/tradeJournal.js"></script>
-<script src="js/ui.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/mtf.js"></script>
 <script src="js/hndai-v1/candleNormalizer.js"></script>
@@ -488,6 +507,8 @@ TradeAI Pro
 <script src="js/hndai-v1/structurePipelineOrchestrator.js"></script>
 <script src="js/hndai-v1/structureShadowMode.js"></script>
 <script src="js/hndai-v1/structureShadowTelemetry.js"></script>
+<script src="js/hndai-v1/structureShadowAssessment.js"></script>
+<script src="js/ui.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/backtestBenchmark.js"></script>
