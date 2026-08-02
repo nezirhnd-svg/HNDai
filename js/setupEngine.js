@@ -58,6 +58,7 @@
     let setupHistory = [];
     let consumedSetupKeys = new Set();
     let lastEvaluation = null;
+    let lastStructureShadow = null;
 
     function clone(value) {
         return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -623,10 +624,78 @@
         return next;
     }
 
+    function structureShadowDiagnostic(enabled, status, reason, legacyResult, shadowResult) {
+        return {
+            enabled,
+            status,
+            reason,
+            legacyResult: clone(legacyResult),
+            shadowResult: clone(shadowResult)
+        };
+    }
+
+    function validStructureShadowContext(context) {
+        if (!context || typeof context !== "object" || Array.isArray(context)) return false;
+        const keys = Object.keys(context).sort();
+        if (keys.length !== 3 || keys[0] !== "analysisContext" ||
+            keys[1] !== "evaluationContext" || keys[2] !== "rawCandles") return false;
+        return Array.isArray(context.rawCandles) && context.analysisContext &&
+            typeof context.analysisContext === "object" && !Array.isArray(context.analysisContext) &&
+            context.evaluationContext && typeof context.evaluationContext === "object" &&
+            !Array.isArray(context.evaluationContext);
+    }
+
+    function evaluateStructureShadow(input, legacyResult, notApplicableReason) {
+        const enabled = input?.featureFlags?.structureShadowEnabled === true;
+        if (!enabled) {
+            lastStructureShadow = structureShadowDiagnostic(
+                false, "DISABLED", "FEATURE_DISABLED", null, null);
+            return;
+        }
+        if (notApplicableReason) {
+            lastStructureShadow = structureShadowDiagnostic(
+                true, "NOT_APPLICABLE", notApplicableReason, null, null);
+            return;
+        }
+        if (!validStructureShadowContext(input.structureShadowContext)) {
+            lastStructureShadow = structureShadowDiagnostic(
+                true, "NOT_APPLICABLE", "INVALID_STRUCTURE_SHADOW_CONTEXT",
+                legacyResult, null);
+            return;
+        }
+        const dependency = typeof window === "object" ? window.HNDStructureShadowMode : null;
+        if (!dependency || typeof dependency.runShadow !== "function") {
+            lastStructureShadow = structureShadowDiagnostic(
+                true, "FAILED", "SHADOW_DEPENDENCY_UNAVAILABLE", legacyResult, null);
+            return;
+        }
+        try {
+            const context = input.structureShadowContext;
+            const result = dependency.runShadow(
+                clone(context.rawCandles), clone(context.analysisContext),
+                clone(legacyResult), clone(context.evaluationContext),
+                { structureShadowEnabled: true }
+            );
+            lastStructureShadow = structureShadowDiagnostic(
+                true,
+                result && typeof result.status === "string" ? result.status : "FAILED",
+                result && result.error ? result.error : null,
+                legacyResult,
+                result
+            );
+        } catch (error) {
+            lastStructureShadow = structureShadowDiagnostic(
+                true, "FAILED", "SHADOW_EVALUATION_EXCEPTION", legacyResult, null);
+        }
+    }
+
     function evaluate(input = {}) {
         const candles = normalizeSetupCandles(input.candles);
         let debug;
+        let shadowLegacyResult = null;
+        let shadowNotApplicableReason = null;
         if (currentSetup) {
+            shadowNotApplicableReason = "EXISTING_SETUP_EVALUATION";
             const previousSetup = clone(currentSetup);
             const previousState = currentSetup.state;
             debug = createSetupDebug(input, currentSetup);
@@ -655,8 +724,19 @@
             const detailed = buildCandidatesDetailed({ ...input, candles });
             const candidates = detailed.candidates;
             debug = detailed.debug;
-            if (candidates.length) currentSetup = createSetup(candidates[0], input, candles);
+            if (candidates.length) {
+                currentSetup = createSetup(candidates[0], input, candles);
+                shadowLegacyResult = {
+                    decision: "ALLOW", reason: debug.primaryReason,
+                    candidate: clone(candidates[0])
+                };
+            } else {
+                shadowLegacyResult = {
+                    decision: "BLOCK", reason: debug.primaryReason, candidate: null
+                };
+            }
         }
+        evaluateStructureShadow(input, shadowLegacyResult, shadowNotApplicableReason);
         lastEvaluation = {
             symbol: String(input.symbol || ""), interval: String(input.interval || ""),
             price: Number.isFinite(input.price) ? input.price : null,
@@ -668,12 +748,13 @@
 
     function reset(reason = "MANUAL_RESET") {
         currentSetup = null; lastTerminalSetup = null; setupHistory = [];
-        consumedSetupKeys = new Set(); lastEvaluation = null;
+        consumedSetupKeys = new Set(); lastEvaluation = null; lastStructureShadow = null;
         return { status: HND_SETUP_STATES.NO_SETUP, reason };
     }
     function getCurrentSetup() { return clone(currentSetup); }
     function getHistory() { return clone(setupHistory); }
     function getLastDebug() { return clone(lastEvaluation?.debug ?? null); }
+    function getLastStructureShadow() { return clone(lastStructureShadow); }
     function explainLastEvaluation() {
         const debug = getLastDebug();
         if (!debug) return {
@@ -708,6 +789,7 @@
 
     window.HNDSetupEngine = {
         evaluate, reset, getState, getCurrentSetup, getHistory, buildCandidates,
-        updateExistingSetup, getLastDebug, explainLastEvaluation, buildCandidatesDetailed
+        updateExistingSetup, getLastDebug, getLastStructureShadow,
+        explainLastEvaluation, buildCandidatesDetailed
     };
 })();
