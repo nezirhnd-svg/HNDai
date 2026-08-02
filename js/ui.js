@@ -147,6 +147,44 @@ function clearTradeStatusClasses(element) {
         .forEach(name => element.classList.remove(name));
 }
 
+function clearStructureShadowClasses(element) {
+    if (!element?.classList) return;
+    [...element.classList].filter(name => name.startsWith("structure-shadow-state-"))
+        .forEach(name => element.classList.remove(name));
+}
+
+function updateStructureShadowUI(diagnostic = null) {
+    const enabled = diagnostic?.enabled === true;
+    const shadow = diagnostic?.shadowResult || null;
+    const status = diagnostic?.status || (enabled ? "-" : "DISABLED");
+    const mode = enabled ? (shadow?.mode || "SHADOW") : "OFF";
+    const mismatch = shadow?.wouldChangeDecision === true;
+    const failed = status === "FAILED" || shadow?.status === "FAILED" ||
+        shadow?.comparison === "PIPELINE_FAILED";
+    const notApplicable = status === "NOT_APPLICABLE";
+    const card = document.getElementById("structureShadowCard");
+    clearStructureShadowClasses(card);
+    const stateClass = failed ? "error" : notApplicable ? "not-applicable"
+        : mismatch ? "mismatch" : enabled && shadow ? "match" : "off";
+    card?.classList?.add(`structure-shadow-state-${stateClass}`);
+    setText("structureShadowMode", mode);
+    setText("structureShadowStatus", status);
+    setText("structureShadowLegacyDecision",
+        shadow?.legacyDecision ?? diagnostic?.legacyResult?.decision ?? "-");
+    setText("structureShadowGateDecision", shadow?.gateDecision ?? "-");
+    setText("structureShadowComparison", shadow?.comparison ?? "-");
+    setText("structureShadowWouldChange", shadow
+        ? `${mismatch ? "YES" : "NO"} — diagnostic only` : "-");
+    setText("structureShadowGateReason", shadow?.gateReason ??
+        (notApplicable ? diagnostic?.reason : null) ?? "-");
+    setText("structureShadowError", shadow?.error ??
+        (failed ? diagnostic?.reason : null) ?? "-");
+    setText("structureShadowFailedStage",
+        shadow?.diagnostics?.failedStage ?? shadow?.pipelineEvaluation?.failedStage ?? "-");
+    setText("structureShadowCandidateKey", shadow?.candidateKey ??
+        diagnostic?.legacyResult?.candidate?.key ?? "-");
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -288,7 +326,7 @@ function setupTradeJournalExportControls() {
 
 function updateUI(
     result, price, setupState = null, tradePlanState = null,
-    tradeState = null, journalState = null
+    tradeState = null, journalState = null, structureShadow = null
 ) {
     const signal = document.getElementById("signal");
 
@@ -318,6 +356,7 @@ function updateUI(
     updateActiveTradeUI(price, tradeState);
     updateJournalPerformanceUI(journalState);
     updateTradeJournalTable(journalState);
+    updateStructureShadowUI(structureShadow);
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");

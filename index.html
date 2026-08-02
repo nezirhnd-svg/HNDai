@@ -326,6 +326,30 @@ TradeAI Pro
 
 </div>
 
+<div id="structureShadowCard" class="card structure-shadow-card structure-shadow-off">
+<div class="structure-shadow-header">
+<h2>STRUCTURE SHADOW</h2>
+<label class="structure-shadow-toggle" for="structureShadowToggle">
+<input id="structureShadowToggle" type="checkbox" autocomplete="off">
+<span id="structureShadowToggleState">OFF</span>
+</label>
+</div>
+<p class="structure-shadow-warning">DIAGNOSTIC ONLY — does not control entries</p>
+<div class="structure-shadow-grid">
+<p>Mode</p><strong id="structureShadowMode">OFF</strong>
+<p>Status</p><strong id="structureShadowStatus">DISABLED</strong>
+<p>Legacy Decision</p><strong id="structureShadowLegacyDecision">-</strong>
+<p>Gate Decision</p><strong id="structureShadowGateDecision">-</strong>
+<p>Comparison</p><strong id="structureShadowComparison">-</strong>
+<p>Would Change</p><strong id="structureShadowWouldChange">-</strong>
+<p>Gate Reason</p><strong id="structureShadowGateReason">-</strong>
+<p>Error</p><strong id="structureShadowError">-</strong>
+<p>Failed Stage</p><strong id="structureShadowFailedStage">-</strong>
+<p>Candidate Key</p><strong id="structureShadowCandidateKey">-</strong>
+</div>
+<p class="structure-shadow-safety">Theoretical comparison only — legacy decisions remain effective.</p>
+</div>
+
 <div class="card paper-trade-card">
 
 <h2>PAPER TRADE</h2>
@@ -433,6 +457,17 @@ TradeAI Pro
 <script src="js/ui.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/mtf.js"></script>
+<script src="js/hndai-v1/candleNormalizer.js"></script>
+<script src="js/hndai-v1/swingDetector.js"></script>
+<script src="js/hndai-v1/swingSequence.js"></script>
+<script src="js/hndai-v1/structureBreakDetector.js"></script>
+<script src="js/hndai-v1/structureEventContract.js"></script>
+<script src="js/hndai-v1/bosChochResolver.js"></script>
+<script src="js/hndai-v1/structureStateSnapshot.js"></script>
+<script src="js/hndai-v1/structureSetupGate.js"></script>
+<script src="js/hndai-v1/structureSetupAdapter.js"></script>
+<script src="js/hndai-v1/structurePipelineOrchestrator.js"></script>
+<script src="js/hndai-v1/structureShadowMode.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/backtestBenchmark.js"></script>

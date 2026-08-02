@@ -28,6 +28,89 @@ const TIMEFRAME_MAP = {
 
 const HND_STRUCTURE_HISTORY_LIMIT = 100;
 const HND_RAW_ZONE_HISTORY_LIMIT = 200;
+const HND_STRUCTURE_SHADOW_LEFT_BARS = 2;
+const HND_STRUCTURE_SHADOW_RIGHT_BARS = 2;
+let structureShadowEnabled = false;
+
+function normalizeStructureShadowCandles(source) {
+    if (!Array.isArray(source) || !source.length) return null;
+    const normalized = source.map(candle => ({
+        openTime: Number(candle?.time),
+        closeTime: Number(candle?.closeTime),
+        open: Number(candle?.open),
+        high: Number(candle?.high),
+        low: Number(candle?.low),
+        close: Number(candle?.close),
+        volume: Number(candle?.volume)
+    }));
+    const valid = normalized.every(candle =>
+        Number.isSafeInteger(candle.openTime) && candle.openTime >= 0 &&
+        Number.isSafeInteger(candle.closeTime) && candle.closeTime >= candle.openTime &&
+        [candle.open, candle.high, candle.low, candle.close, candle.volume]
+            .every(Number.isFinite) &&
+        candle.open > 0 && candle.high > 0 && candle.low > 0 && candle.close > 0 &&
+        candle.volume >= 0 && candle.high >= Math.max(candle.open, candle.close) &&
+        candle.low <= Math.min(candle.open, candle.close)
+    );
+    return valid ? normalized : null;
+}
+
+function buildStructureShadowContext(source, symbol, interval, nowMs) {
+    const rawCandles = normalizeStructureShadowCandles(source);
+    if (!rawCandles || !Number.isSafeInteger(nowMs) || nowMs < 0 ||
+        typeof symbol !== "string" || !symbol || symbol !== symbol.trim().toUpperCase() ||
+        typeof interval !== "string" || !interval || interval !== interval.trim()) return null;
+    let evaluationAtIndex = -1;
+    for (let index = rawCandles.length - 1; index >= 0; index -= 1) {
+        if (rawCandles[index].closeTime <= nowMs) {
+            evaluationAtIndex = index;
+            break;
+        }
+    }
+    if (evaluationAtIndex < 0) return null;
+    const evaluationCandle = rawCandles[evaluationAtIndex];
+    return {
+        rawCandles,
+        analysisContext: {
+            symbol, interval, nowMs,
+            leftBars: HND_STRUCTURE_SHADOW_LEFT_BARS,
+            rightBars: HND_STRUCTURE_SHADOW_RIGHT_BARS
+        },
+        evaluationContext: {
+            symbol, interval, evaluationAtIndex,
+            evaluationOpenTime: evaluationCandle.openTime,
+            evaluationCloseTime: evaluationCandle.closeTime
+        }
+    };
+}
+
+function buildStructureShadowSetupFields(source, symbol, interval, nowMs, enabled) {
+    const structureShadowEnabledValue = enabled === true;
+    return {
+        featureFlags: { structureShadowEnabled: structureShadowEnabledValue },
+        structureShadowContext: structureShadowEnabledValue
+            ? buildStructureShadowContext(source, symbol, interval, nowMs) : null
+    };
+}
+
+function initializeStructureShadowToggle() {
+    const toggle = document.getElementById("structureShadowToggle");
+    structureShadowEnabled = false;
+    if (!toggle) return;
+    toggle.checked = false;
+    toggle.addEventListener("change", () => {
+        structureShadowEnabled = toggle.checked === true;
+        const state = document.getElementById("structureShadowToggleState");
+        if (state) state.textContent = structureShadowEnabled ? "SHADOW" : "OFF";
+    });
+}
+
+window.HNDStructureShadowRuntimeTestAPI = Object.freeze({
+    normalizeStructureShadowCandles,
+    buildStructureShadowContext,
+    buildStructureShadowSetupFields,
+    isEnabled: () => structureShadowEnabled
+});
 
 const HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS = Object.freeze({
     maxEvents: HND_STRUCTURE_HISTORY_LIMIT,
@@ -156,6 +239,7 @@ function setupMarketControls() {
 
 initTradingView();
 setupMarketControls();
+initializeStructureShadowToggle();
 
 let marketCatalogInitPromise = Promise.resolve(null);
 try {
@@ -458,6 +542,8 @@ async function startEngine() {
 
     // Analiz yap
     const result = analyzeMarket();
+    const structureShadowSetupFields = buildStructureShadowSetupFields(
+        loadedCandles, cycleCoin, cycleInterval, Date.now(), structureShadowEnabled);
 
     let setupState = { status: "NO_SETUP", currentSetup: null };
     try {
@@ -469,7 +555,9 @@ async function startEngine() {
                 price,
                 analysis: result,
                 qualifiedPriceZones: cycleQualifiedPriceZones,
-                mtfState: window.HNDMTFEngine?.getState?.() || null
+                mtfState: window.HNDMTFEngine?.getState?.() || null,
+                featureFlags: structureShadowSetupFields.featureFlags,
+                structureShadowContext: structureShadowSetupFields.structureShadowContext
             });
         }
     } catch (setupError) {
@@ -491,6 +579,19 @@ async function startEngine() {
         };
     }
 
+    let structureShadow = null;
+    try {
+        if (window.HNDSetupEngine &&
+            typeof window.HNDSetupEngine.getLastStructureShadow === "function") {
+            const latestShadow = window.HNDSetupEngine.getLastStructureShadow();
+            structureShadow = latestShadow === null || latestShadow === undefined
+                ? null : JSON.parse(JSON.stringify(latestShadow));
+        }
+    } catch (shadowReadError) {
+        console.warn("Structure Shadow diagnostics could not be read; legacy flow will continue.",
+            shadowReadError);
+    }
+
     window.HNDLastSetupEvaluation = {
         symbol: cycleCoin,
         interval: cycleInterval,
@@ -499,7 +600,9 @@ async function startEngine() {
         currentSetup: setupState?.currentSetup
             ? JSON.parse(JSON.stringify(setupState.currentSetup)) : null,
         debug: setupState?.lastEvaluation?.debug
-            ? JSON.parse(JSON.stringify(setupState.lastEvaluation.debug)) : null
+            ? JSON.parse(JSON.stringify(setupState.lastEvaluation.debug)) : null,
+        structureShadow: structureShadow === null
+            ? null : JSON.parse(JSON.stringify(structureShadow))
     };
 
     let tradePlanState = { status: "NO_PLAN", currentPlan: null };
@@ -659,7 +762,8 @@ async function startEngine() {
         }
     }
 
-    updateUI(result, price, setupState, tradePlanState, tradeState, journalState);
+    updateUI(result, price, setupState, tradePlanState, tradeState, journalState,
+        structureShadow);
 
     } finally {
         engineRunning = false;
