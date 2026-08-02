@@ -12,6 +12,8 @@ let structureObservationPlanControlsInitialized = false;
 let lastStructureObservationProgress = null;
 let structureMismatchAnalyzerControlsInitialized = false;
 let lastStructureMismatchAnalysis = null;
+let structurePaperTrialReadinessControlsInitialized = false;
+let lastStructurePaperTrialReadiness = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -602,6 +604,60 @@ function setupStructureMismatchAnalyzerControls() {
     structureMismatchAnalyzerControlsInitialized = true;
 }
 
+function updateStructurePaperTrialReadinessUI(result = null) {
+    const value = result || {}, status = value.status || "NOT_EVALUATED";
+    setText("structureReadinessStatus", String(status).replaceAll("_", " "));
+    setText("structureReadinessEligible", value.eligibleForPaperTrial === true ? "YES — review only" : "NO — diagnostic only");
+    setText("structureReadinessAssessment", value.assessmentStatus || "-");
+    setText("structureReadinessObservationTargets", value.observationPlanStatus || "-");
+    setText("structureReadinessCompletedCells", `${value.completedCellCount || 0} / ${value.cellCount || 6}`);
+    setText("structureReadinessObservations", Number.isSafeInteger(value.observationCount) ? value.observationCount : 0);
+    setText("structureReadinessComparable", Number.isSafeInteger(value.comparableCount) ? value.comparableCount : 0);
+    setText("structureReadinessFailures", Number.isSafeInteger(value.failureCount) ? value.failureCount : 0);
+    setText("structureReadinessHighPriority", Number.isSafeInteger(value.highPriorityReviewCount) ? value.highPriorityReviewCount : 0);
+    setText("structureReadinessMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
+    setText("structureReadinessOperatorReview", value.operatorContext?.diagnosticsReviewed === true ? "ACKNOWLEDGED" : "NOT ACKNOWLEDGED");
+    const section = document.getElementById("structurePaperTrialReadiness");
+    [...(section?.classList || [])].filter(name => name.startsWith("readiness-"))
+        .forEach(name => section.classList.remove(name));
+    section?.classList?.add(`readiness-${status.toLowerCase().replaceAll("_", "-")}`);
+}
+
+function evaluateStructurePaperTrialReadiness() {
+    try {
+        const checked = document.getElementById("structureReadinessAcknowledgement")?.checked === true;
+        const context = { diagnosticsReviewed: checked, acknowledgedAt: checked ? Date.now() : null };
+        const snapshot = window.HNDStructureShadowCollection?.getSnapshot?.();
+        const policy = window.HNDStructurePaperTrialReadinessGate?.getDefaultPolicy?.();
+        const result = window.HNDStructurePaperTrialReadinessGate?.evaluateReadiness?.(snapshot, context, policy);
+        if (!result) return;
+        lastStructurePaperTrialReadiness = JSON.parse(JSON.stringify(result));
+        updateStructurePaperTrialReadinessUI(result);
+    } catch (error) { updateStructurePaperTrialReadinessUI({ status: "DEPENDENCY_FAILURE" }); }
+}
+
+function downloadStructurePaperTrialReadiness() {
+    if (!lastStructurePaperTrialReadiness) { setText("structureReadinessStatus", "NOT EVALUATED"); return; }
+    try {
+        const blob = new Blob([JSON.stringify(lastStructurePaperTrialReadiness, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-paper-trial-readiness-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { console.warn("Paper trial readiness export could not be created."); }
+}
+
+function setupStructurePaperTrialReadinessControls() {
+    if (structurePaperTrialReadinessControlsInitialized) return;
+    const evaluateButton = document.getElementById("evaluateStructurePaperTrialReadiness");
+    const exportButton = document.getElementById("exportStructurePaperTrialReadiness");
+    const acknowledgement = document.getElementById("structureReadinessAcknowledgement");
+    if (!evaluateButton || !exportButton || !acknowledgement) return;
+    acknowledgement.checked = false;
+    evaluateButton.addEventListener("click", evaluateStructurePaperTrialReadiness);
+    exportButton.addEventListener("click", downloadStructurePaperTrialReadiness);
+    structurePaperTrialReadinessControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -781,6 +837,7 @@ function updateUI(
     setupStructureShadowCollectionControls();
     setupStructureObservationPlanControls();
     setupStructureMismatchAnalyzerControls();
+    setupStructurePaperTrialReadinessControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -823,3 +880,4 @@ setupStructureShadowAssessmentControls();
 setupStructureShadowCollectionControls();
 setupStructureObservationPlanControls();
 setupStructureMismatchAnalyzerControls();
+setupStructurePaperTrialReadinessControls();

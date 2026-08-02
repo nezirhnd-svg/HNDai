@@ -465,6 +465,31 @@ TradeAI Pro
 </div>
 <p class="structure-shadow-safety">Diagnostic classification only; this analysis does not change rules or authorize entries.</p>
 </div>
+<div id="structurePaperTrialReadiness" class="structure-paper-readiness readiness-not-evaluated">
+<h3>PAPER TRIAL READINESS</h3>
+<div class="structure-shadow-grid">
+<p>Gate Status</p><strong id="structureReadinessStatus">NOT EVALUATED</strong>
+<p>Diagnostic Eligibility</p><strong id="structureReadinessEligible">NO — diagnostic only</strong>
+<p>Assessment</p><strong id="structureReadinessAssessment">-</strong>
+<p>Observation Targets</p><strong id="structureReadinessObservationTargets">-</strong>
+<p>Completed Cells</p><strong id="structureReadinessCompletedCells">0 / 6</strong>
+<p>Observations</p><strong id="structureReadinessObservations">0</strong>
+<p>Comparable</p><strong id="structureReadinessComparable">0</strong>
+<p>Failures</p><strong id="structureReadinessFailures">0</strong>
+<p>High-Priority Reviews</p><strong id="structureReadinessHighPriority">0</strong>
+<p>Mismatch Rate</p><strong id="structureReadinessMismatchRate">-</strong>
+<p>Operator Review</p><strong id="structureReadinessOperatorReview">NOT ACKNOWLEDGED</strong>
+</div>
+<label class="structure-readiness-acknowledgement" for="structureReadinessAcknowledgement">
+<input id="structureReadinessAcknowledgement" type="checkbox" autocomplete="off">
+<span>I reviewed the diagnostic assessment, coverage plan, and mismatch report.</span>
+</label>
+<div class="structure-shadow-actions">
+<button id="evaluateStructurePaperTrialReadiness" type="button">Evaluate Paper Trial Readiness</button>
+<button id="exportStructurePaperTrialReadiness" type="button">Export Readiness JSON</button>
+</div>
+<p class="structure-shadow-safety">Diagnostic eligibility only; this result does not enable paper trading, entries, or real orders.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -589,6 +614,7 @@ TradeAI Pro
 <script src="js/hndai-v1/structureShadowCollection.js"></script>
 <script src="js/hndai-v1/structureShadowObservationPlan.js"></script>
 <script src="js/hndai-v1/structureShadowMismatchAnalyzer.js"></script>
+<script src="js/hndai-v1/structurePaperTrialReadinessGate.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
