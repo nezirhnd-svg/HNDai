@@ -435,6 +435,36 @@ TradeAI Pro
 </div>
 <p class="structure-shadow-safety">Observation coverage only; completing this plan does not authorize entries or trading.</p>
 </div>
+<div id="structureMismatchDiagnostics" class="structure-mismatch-diagnostics analyzer-not-analyzed">
+<h3>MISMATCH DIAGNOSTICS</h3>
+<div class="structure-shadow-grid">
+<p>Analyzer Status</p><strong id="structureMismatchAnalyzerStatus">NOT ANALYZED</strong>
+<p>Observations</p><strong id="structureMismatchObservationCount">0</strong>
+<p>Comparable</p><strong id="structureMismatchComparableCount">0</strong>
+<p>Matches</p><strong id="structureMismatchMatchCount">0</strong>
+<p>Mismatches</p><strong id="structureMismatchCount">0</strong>
+<p>Failures</p><strong id="structureMismatchFailureCount">0</strong>
+<p>Not Comparable</p><strong id="structureMismatchNotComparableCount">0</strong>
+<p>Not Applicable</p><strong id="structureMismatchNotApplicableCount">0</strong>
+<p>Match Rate</p><strong id="structureMismatchMatchRate">-</strong>
+<p>Mismatch Rate</p><strong id="structureMismatchRate">-</strong>
+</div>
+<div class="structure-observation-table-wrap">
+<table class="structure-observation-table"><thead><tr><th>Priority</th><th>Market</th><th>TF</th><th>Category</th><th>Comparison</th><th>Gate Reason</th><th>Error / Stage</th><th>Suggested Review</th></tr></thead>
+<tbody id="structureMismatchReviewBody"></tbody></table>
+</div>
+<div class="structure-mismatch-summaries">
+<div><h4>Categories</h4><ul id="structureMismatchCategorySummary"><li>-</li></ul></div>
+<div><h4>Gate Reasons</h4><ul id="structureMismatchGateReasonSummary"><li>-</li></ul></div>
+<div><h4>Errors</h4><ul id="structureMismatchErrorSummary"><li>-</li></ul></div>
+<div><h4>Failed Stages</h4><ul id="structureMismatchFailedStageSummary"><li>-</li></ul></div>
+</div>
+<div class="structure-shadow-actions">
+<button id="analyzeStructureShadowCollection" type="button">Analyze Collection</button>
+<button id="exportStructureMismatchAnalysis" type="button">Export Analysis JSON</button>
+</div>
+<p class="structure-shadow-safety">Diagnostic classification only; this analysis does not change rules or authorize entries.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -558,6 +588,7 @@ TradeAI Pro
 <script src="js/hndai-v1/structureShadowAssessment.js"></script>
 <script src="js/hndai-v1/structureShadowCollection.js"></script>
 <script src="js/hndai-v1/structureShadowObservationPlan.js"></script>
+<script src="js/hndai-v1/structureShadowMismatchAnalyzer.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>

@@ -774,6 +774,17 @@ box-shadow:0 0 10px rgba(34,197,94,.35);
 .plan-targets-met #structureObservationPlanStatus { color:#22c55e; }
 .plan-in-progress #structureObservationPlanStatus { color:#facc15; }
 
+.structure-mismatch-diagnostics { margin-top:16px; padding-top:14px; border-top:1px solid #334155; }
+.structure-mismatch-diagnostics h3, .structure-mismatch-diagnostics h4 { margin:0 0 10px; }
+.structure-mismatch-summaries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.structure-mismatch-summaries ul { margin:0; padding-left:18px; }
+.structure-mismatch-diagnostics tr.priority-high { color:#ef4444; }
+.structure-mismatch-diagnostics tr.priority-medium { color:#fb923c; }
+.structure-mismatch-diagnostics tr.priority-low { color:#facc15; }
+.analyzer-failures-found #structureMismatchAnalyzerStatus { color:#ef4444; }
+.analyzer-review-items-found #structureMismatchAnalyzerStatus { color:#fb923c; }
+@media (max-width:520px) { .structure-mismatch-summaries { grid-template-columns:1fr; } }
+
 @media (max-width: 1100px) {
     .navbar { height:auto; min-height:70px; flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
     .nav-links { flex-wrap:wrap; }
