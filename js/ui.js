@@ -7,7 +7,10 @@ console.log("HNDai UI v4.5");
 let tradeJournalExportControlsInitialized = false;
 let structureShadowTelemetryControlsInitialized = false;
 let structureShadowAssessmentControlsInitialized = false;
+let structureShadowCollectionControlsInitialized = false;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
+const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
+const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
 
 function setText(id, value) {
     const element = document.getElementById(id);
@@ -257,7 +260,7 @@ function formatAssessmentRate(value) {
     return Number.isFinite(value) ? `${value.toFixed(2)}%` : "-";
 }
 
-function updateStructureShadowAssessmentUI(result = null) {
+function updateStructureShadowAssessmentUI(result = null, sourceLabel = "") {
     const section = document.getElementById("structureShadowAssessment");
     const status = result?.status || "NOT ASSESSED";
     section?.classList?.remove("assessment-not-assessed", "assessment-invalid-snapshot",
@@ -280,8 +283,10 @@ function updateStructureShadowAssessmentUI(result = null) {
     setText("structureShadowAssessmentFailureRate", formatAssessmentRate(result?.failureRate));
     setText("structureShadowAssessmentFailedChecks", Array.isArray(result?.failedChecks) && result.failedChecks.length
         ? result.failedChecks.join(", ") : result ? "NONE" : "-");
-    setText("structureShadowAssessmentDisclaimer", result?.disclaimer ||
-        "Diagnostic observation criteria only; this result does not authorize entries or trading.");
+    const disclaimer = result?.disclaimer ||
+        "Diagnostic observation criteria only; this result does not authorize entries or trading.";
+    setText("structureShadowAssessmentDisclaimer",
+        sourceLabel ? `${sourceLabel} — ${disclaimer}` : disclaimer);
 }
 
 function showStructureShadowImportError(error) {
@@ -332,6 +337,102 @@ function setupStructureShadowAssessmentControls() {
         reader.readAsText(file);
     });
     structureShadowAssessmentControlsInitialized = true;
+}
+
+function updateStructureShadowCollectionUI(summary = null) {
+    const value = summary || {};
+    setText("structureShadowCollectionSourceCount", Number.isSafeInteger(value.sourceCount) ? value.sourceCount : 0);
+    setText("structureShadowCollectionAcceptedCount", Number.isSafeInteger(value.acceptedSourceCount) ? value.acceptedSourceCount : 0);
+    setText("structureShadowCollectionRejectedCount", Number.isSafeInteger(value.rejectedSourceCount) ? value.rejectedSourceCount : 0);
+    setText("structureShadowCollectionObservationCount", Number.isSafeInteger(value.observationCount) ? value.observationCount : 0);
+    setText("structureShadowCollectionDuplicateCount", Number.isSafeInteger(value.duplicateCount) ? value.duplicateCount : 0);
+    setText("structureShadowCollectionConflictCount", Number.isSafeInteger(value.conflictCount) ? value.conflictCount : 0);
+    setText("structureShadowCollectionDroppedCount", Number.isSafeInteger(value.droppedCount) ? value.droppedCount : 0);
+    setText("structureShadowCollectionMarkets", Array.isArray(value.markets) ? value.markets.length : 0);
+    setText("structureShadowCollectionIntervals", Array.isArray(value.intervals) ? value.intervals.length : 0);
+    setText("structureShadowCollectionCompatible", value.assessmentCompatible === true ? "YES — format only" : "NO");
+    const section = document.getElementById("structureShadowCollection");
+    section?.classList?.toggle("collection-conflict", (value.conflictCount || 0) > 0);
+    section?.classList?.toggle("collection-rejected", (value.rejectedSourceCount || 0) > 0);
+}
+
+function readStructureShadowCollectionFile(file) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ valid: true, text: String(reader.result) });
+        reader.onerror = () => resolve({ valid: false, error: "FILE_READ_FAILED" });
+        reader.readAsText(file);
+    });
+}
+
+function downloadStructureShadowCollection() {
+    try {
+        const snapshot = window.HNDStructureShadowCollection?.getSnapshot?.();
+        if (!snapshot) return;
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `HNDai-structure-shadow-collection-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) { console.warn("Structure Shadow collection export could not be created."); }
+}
+
+function setupStructureShadowCollectionControls() {
+    if (structureShadowCollectionControlsInitialized) return;
+    const addButton = document.getElementById("addStructureShadowDiagnosticFiles");
+    const assessButton = document.getElementById("assessStructureShadowCollection");
+    const exportButton = document.getElementById("exportStructureShadowCollection");
+    const resetButton = document.getElementById("resetStructureShadowCollection");
+    const fileInput = document.getElementById("structureShadowCollectionFiles");
+    if (!addButton || !assessButton || !exportButton || !resetButton || !fileInput) return;
+    addButton.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+        const collection = window.HNDStructureShadowCollection;
+        const files = Array.from(fileInput.files || []).sort((left, right) =>
+            left.name.localeCompare(right.name));
+        const importedAt = Date.now();
+        try {
+            if (files.length > HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT ||
+                files.reduce((total, file) => total + file.size, 0) > HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT) {
+                files.forEach((file, index) => collection?.addSnapshot?.(null,
+                    { name: file.name, importedAt: importedAt + index }));
+                return;
+            }
+            for (let index = 0; index < files.length; index += 1) {
+                const file = files[index];
+                const source = { name: file.name, importedAt: importedAt + index };
+                if (file.size > HND_STRUCTURE_SHADOW_IMPORT_LIMIT) {
+                    collection?.addSnapshot?.(null, source);
+                    continue;
+                }
+                const read = await readStructureShadowCollectionFile(file);
+                if (!read.valid) { collection?.addSnapshot?.(null, source); continue; }
+                try { collection?.addSnapshot?.(JSON.parse(read.text), source); }
+                catch (error) { collection?.addSnapshot?.(null, source); }
+            }
+        } finally {
+            updateStructureShadowCollectionUI(collection?.getSummary?.() || null);
+            fileInput.value = "";
+        }
+    });
+    assessButton.addEventListener("click", () => {
+        try {
+            const snapshot = window.HNDStructureShadowCollection?.getSnapshot?.();
+            const result = window.HNDStructureShadowAssessment?.assessSnapshot?.(snapshot);
+            if (result) updateStructureShadowAssessmentUI(result, "COLLECTION ASSESSMENT");
+        } catch (error) { showStructureShadowImportError("COLLECTION_ASSESSMENT_FAILED"); }
+    });
+    exportButton.addEventListener("click", downloadStructureShadowCollection);
+    resetButton.addEventListener("click", () => {
+        window.HNDStructureShadowCollection?.reset?.("UI_RESET");
+        updateStructureShadowCollectionUI(window.HNDStructureShadowCollection?.getSummary?.() || null);
+    });
+    updateStructureShadowCollectionUI(window.HNDStructureShadowCollection?.getSummary?.() || null);
+    structureShadowCollectionControlsInitialized = true;
 }
 
 function updateActiveTradeUI(price, tradeState = null) {
@@ -510,6 +611,7 @@ function updateUI(
     updateStructureShadowTelemetryUI(structureShadowTelemetry);
     setupStructureShadowTelemetryControls();
     setupStructureShadowAssessmentControls();
+    setupStructureShadowCollectionControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -549,3 +651,4 @@ function updateUI(
 setupTradeJournalExportControls();
 setupStructureShadowTelemetryControls();
 setupStructureShadowAssessmentControls();
+setupStructureShadowCollectionControls();
