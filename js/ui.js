@@ -14,6 +14,8 @@ let structureMismatchAnalyzerControlsInitialized = false;
 let lastStructureMismatchAnalysis = null;
 let structurePaperTrialReadinessControlsInitialized = false;
 let lastStructurePaperTrialReadiness = null;
+let structureHistoricalShadowReplayControlsInitialized = false;
+let lastStructureHistoricalShadowReplay = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -658,6 +660,80 @@ function setupStructurePaperTrialReadinessControls() {
     structurePaperTrialReadinessControlsInitialized = true;
 }
 
+function updateStructureHistoricalShadowReplayUI(result = null) {
+    const value = result || {};
+    setText("historicalShadowReplayStatus", String(value.status || "NOT RUN").replaceAll("_", " "));
+    setText("historicalShadowReplaySource", value.source || "HISTORICAL_REPLAY");
+    setText("historicalShadowReplayMarket", value.symbol || "-");
+    setText("historicalShadowReplayTimeframe", value.interval || "-");
+    setText("historicalShadowReplayInputCandles", Number.isSafeInteger(value.inputCandleCount) ? value.inputCandleCount : 0);
+    setText("historicalShadowReplayEvaluatedCandles", Number.isSafeInteger(value.evaluatedCandleCount) ? value.evaluatedCandleCount : 0);
+    setText("historicalShadowReplayObservations", Number.isSafeInteger(value.observationCount) ? value.observationCount : 0);
+    setText("historicalShadowReplayComparable", Number.isSafeInteger(value.comparableCount) ? value.comparableCount : 0);
+    setText("historicalShadowReplayMatches", Number.isSafeInteger(value.matchCount) ? value.matchCount : 0);
+    setText("historicalShadowReplayMismatches", Number.isSafeInteger(value.mismatchCount) ? value.mismatchCount : 0);
+    setText("historicalShadowReplayFailures", Number.isSafeInteger(value.failureCount) ? value.failureCount : 0);
+    setText("historicalShadowReplayDuplicateCandidates", Number.isSafeInteger(value.duplicateCandidateCount) ? value.duplicateCandidateCount : 0);
+    setText("historicalShadowReplayMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
+    setText("historicalShadowReplayMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
+    setText("historicalShadowReplayReadiness", "NONE");
+}
+
+async function runStructureHistoricalShadowReplay() {
+    const runButton = document.getElementById("runHistoricalShadowReplay");
+    try {
+        if (runButton) runButton.disabled = true;
+        setText("historicalShadowReplayStatus", "LOADING");
+        const symbol = document.getElementById("historicalShadowReplaySymbol")?.value || "BTCUSDT";
+        const interval = document.getElementById("historicalShadowReplayInterval")?.value || "15m";
+        const server = await fetchBinanceServerTime({ silent: true });
+        const paged = await window.HNDStructureHistoricalReplayBinancePager?.fetchClosedCandles?.({
+            symbol, interval, candleCount: 3000, evaluationCutoffTime: server.serverTime,
+            pageSize: 1000, requestDelayMs: 200
+        });
+        if (!paged?.valid) throw new Error("REPLAY_PAGINATION_FAILED");
+        const closed = paged.candles;
+        const config = window.HNDStructureHistoricalShadowReplay?.getDefaultConfig?.();
+        if (!config) throw new Error("REPLAY_DEPENDENCY_UNAVAILABLE");
+        config.symbol = symbol; config.interval = interval;
+        config.evaluationCutoffTime = server.serverTime;
+        config.maximumEvaluationCandles = Math.min(10000, Math.max(1, closed.length - config.warmupCandles));
+        const result = window.HNDStructureHistoricalShadowReplay.runReplay(closed, config);
+        result.warnings.push(`BINANCE_PAGES:${paged.pageCount}`);
+        result.warnings.push(`DUPLICATES_REMOVED:${paged.duplicateCount}`);
+        result.warnings.push(`RATE_LIMIT_RETRIES:${paged.rateLimitRetryCount}`);
+        lastStructureHistoricalShadowReplay = JSON.parse(JSON.stringify(result));
+        updateStructureHistoricalShadowReplayUI(result);
+    } catch (error) {
+        lastStructureHistoricalShadowReplay = null;
+        updateStructureHistoricalShadowReplayUI({ status: "DEPENDENCY_FAILURE", source: "HISTORICAL_REPLAY",
+            symbol: document.getElementById("historicalShadowReplaySymbol")?.value || null,
+            interval: document.getElementById("historicalShadowReplayInterval")?.value || null });
+    } finally { if (runButton) runButton.disabled = false; }
+}
+
+function downloadStructureHistoricalShadowReplay() {
+    if (!lastStructureHistoricalShadowReplay) { setText("historicalShadowReplayStatus", "NOT RUN"); return; }
+    try {
+        const json = window.HNDStructureHistoricalShadowReplay?.exportReplay?.(lastStructureHistoricalShadowReplay);
+        if (typeof json !== "string") throw new Error("INVALID_REPLAY_EXPORT");
+        const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-historical-shadow-replay-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { console.warn("Historical shadow replay export could not be created."); }
+}
+
+function setupStructureHistoricalShadowReplayControls() {
+    if (structureHistoricalShadowReplayControlsInitialized) return;
+    const runButton = document.getElementById("runHistoricalShadowReplay");
+    const exportButton = document.getElementById("exportHistoricalShadowReplay");
+    if (!runButton || !exportButton) return;
+    runButton.addEventListener("click", runStructureHistoricalShadowReplay);
+    exportButton.addEventListener("click", downloadStructureHistoricalShadowReplay);
+    structureHistoricalShadowReplayControlsInitialized = true;
+}
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -838,6 +914,7 @@ function updateUI(
     setupStructureObservationPlanControls();
     setupStructureMismatchAnalyzerControls();
     setupStructurePaperTrialReadinessControls();
+    setupStructureHistoricalShadowReplayControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -881,3 +958,4 @@ setupStructureShadowCollectionControls();
 setupStructureObservationPlanControls();
 setupStructureMismatchAnalyzerControls();
 setupStructurePaperTrialReadinessControls();
+setupStructureHistoricalShadowReplayControls();
