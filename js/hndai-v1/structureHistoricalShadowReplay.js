@@ -66,7 +66,10 @@
             evaluationCutoffTime: config && config.evaluationCutoffTime || null,
             evaluatedCandleCount: 0, observationCount: 0, comparableCount: 0, matchCount: 0,
             mismatchCount: 0, failureCount: 0, notComparableCount: 0, notApplicableCount: 0,
-            duplicateCandidateCount: 0,
+            duplicateCandidateCount: 0, pendingCandidateCreatedCount: 0,
+            pendingCandidateResolvedCount: 0, pendingCandidateExpiredCount: 0,
+            unmatchedStructureEventCount: 0, legacyDecisionAvailableCount: 0,
+            gateDecisionAvailableCount: 0, notComparableReasons: {},
             matchRate: null, mismatchRate: null, observations: [], warnings: [], disclaimer: DISCLAIMER };
     }
     function classify(value) {
@@ -77,9 +80,9 @@
         if (comparison === "NOT_COMPARABLE" || comparison === "NOT_EVALUATED") return "NOT_COMPARABLE";
         return "FAILURE";
     }
-    function evaluate(prefix, config, closeTime) {
+    function evaluate(prefix, config, closeTime, lifecycle) {
         if (dependency && typeof dependency.evaluateHistoricalShadow === "function")
-            return dependency.evaluateHistoricalShadow(clone(prefix), clone(config), closeTime);
+            return dependency.evaluateHistoricalShadow(clone(prefix), clone(config), closeTime, clone(lifecycle));
         throw new Error("REPLAY_EVALUATOR_UNAVAILABLE");
     }
     function runReplay(candles, config) {
@@ -94,10 +97,11 @@
             return base(candles, cfg, "DEPENDENCY_FAILURE", "REPLAY_EVALUATOR_UNAVAILABLE");
         var output = base(candles, cfg, "COMPLETED_NO_COMPARABLE", null);
         var comparedCandidateKeys = new Set();
+        var lifecycle = { candidates: [], seenCandidateKeys: [], resolvedEventIds: [] };
         var end = Math.min(closed.length, cfg.warmupCandles + cfg.maximumEvaluationCandles);
-        for (var index = cfg.warmupCandles; index < end; index += 1) {
+        for (var index = 0; index < end; index += 1) {
             var candle = closed[index], result;
-            try { result = evaluate(closed.slice(0, index + 1), cfg, candle.closeTime); }
+            try { result = evaluate(closed.slice(0, index + 1), cfg, candle.closeTime, lifecycle); }
             catch (error) {
                 output.status = "DEPENDENCY_FAILURE";
                 output.error = "DEPENDENCY_EXCEPTION";
@@ -106,29 +110,49 @@
                 output.evaluatedCandleCount = 0;
                 return clone(output);
             }
-            var category = classify(result);
+            lifecycle = result && result.lifecycle ? clone(result.lifecycle) : lifecycle;
+            ["pendingCandidateCreatedCount", "pendingCandidateResolvedCount", "pendingCandidateExpiredCount",
+                "duplicateCandidateCount", "unmatchedStructureEventCount", "legacyDecisionAvailableCount",
+                "gateDecisionAvailableCount"].forEach(function (field) {
+                if (result && Number.isSafeInteger(result[field]) && result[field] >= 0) output[field] += result[field];
+            });
+            if (index < cfg.warmupCandles) continue;
+            var values = result && Array.isArray(result.comparisons) && result.comparisons.length ? result.comparisons : [result];
+            output.evaluatedCandleCount += 1;
+            values.forEach(function (value, valueIndex) {
+            var category = classify(value);
             if ((category === "MATCH" || category === "MISMATCH" || category === "FAILURE") &&
-                result && typeof result.candidateKey === "string" && result.candidateKey.length > 0) {
-                if (comparedCandidateKeys.has(result.candidateKey)) {
+                value && typeof value.candidateKey === "string" && value.candidateKey.length > 0) {
+                if (comparedCandidateKeys.has(value.candidateKey)) {
                     output.duplicateCandidateCount += 1;
                     category = "NOT_COMPARABLE";
-                    result = { comparison: "NOT_COMPARABLE", error: "DUPLICATE_CANDIDATE_SKIPPED",
-                        candidateKey: result.candidateKey };
-                } else comparedCandidateKeys.add(result.candidateKey);
+                    value = { comparison: "NOT_COMPARABLE", error: "DUPLICATE_CANDIDATE_SKIPPED",
+                        candidateKey: value.candidateKey };
+                } else comparedCandidateKeys.add(value.candidateKey);
             }
-            var observation = { key: cfg.symbol + "|" + cfg.interval + "|" + candle.closeTime,
+            var observation = { key: cfg.symbol + "|" + cfg.interval + "|" + candle.closeTime + "|" + valueIndex,
                 symbol: cfg.symbol, interval: cfg.interval, evaluationCloseTime: candle.closeTime,
                 source: SOURCE, countsTowardLiveReadiness: false, category: category,
-                comparison: result && typeof result.comparison === "string" ? result.comparison : null,
-                error: result && result.error != null ? String(result.error) : null,
-                candidateKey: result && typeof result.candidateKey === "string" ? result.candidateKey : null };
-            output.evaluatedCandleCount += 1;
+                comparison: value && typeof value.comparison === "string" ? value.comparison : null,
+                error: value && value.error != null ? String(value.error) : null,
+                candidateKey: value && typeof value.candidateKey === "string" ? value.candidateKey : null,
+                reason: value && typeof value.reason === "string" ? value.reason : null,
+                legacyDecision: value && ["ALLOW", "BLOCK"].includes(value.legacyDecision) ? value.legacyDecision : null,
+                gateDecision: value && ["ALLOW", "BLOCK"].includes(value.gateDecision) ? value.gateDecision : null,
+                legacyDecisionSource: value && typeof value.legacyDecisionSource === "string" ? value.legacyDecisionSource : null,
+                gateDecisionSource: value && typeof value.gateDecisionSource === "string" ? value.gateDecisionSource : null,
+                legacyDecisionEvidence: value && value.legacyDecisionEvidence && typeof value.legacyDecisionEvidence === "object" ? clone(value.legacyDecisionEvidence) : null };
             if (category === "MATCH") { output.matchCount += 1; output.comparableCount += 1; }
             else if (category === "MISMATCH") { output.mismatchCount += 1; output.comparableCount += 1; }
             else if (category === "FAILURE") output.failureCount += 1;
             else if (category === "NOT_APPLICABLE") output.notApplicableCount += 1;
-            else output.notComparableCount += 1;
+            else {
+                output.notComparableCount += 1;
+                var reason = observation.reason || "UNSPECIFIED_NOT_COMPARABLE";
+                output.notComparableReasons[reason] = (output.notComparableReasons[reason] || 0) + 1;
+            }
             if (category !== "NOT_COMPARABLE" || cfg.includeNonComparable) output.observations.push(observation);
+            });
         }
         output.observationCount = output.observations.length;
         output.matchRate = output.comparableCount ? Math.round(output.matchCount / output.comparableCount * 10000) / 100 : null;
@@ -144,7 +168,10 @@
         var fields = ["valid", "error", "schemaVersion", "status", "source", "countsTowardLiveReadiness",
             "symbol", "interval", "inputCandleCount", "evaluatedCandleCount", "observationCount",
             "comparableCount", "matchCount", "mismatchCount", "failureCount", "notComparableCount",
-            "notApplicableCount", "duplicateCandidateCount", "matchRate", "mismatchRate", "evaluationCutoffTime", "warnings", "disclaimer"];
+            "notApplicableCount", "duplicateCandidateCount", "pendingCandidateCreatedCount",
+            "pendingCandidateResolvedCount", "pendingCandidateExpiredCount", "unmatchedStructureEventCount",
+            "legacyDecisionAvailableCount", "gateDecisionAvailableCount", "notComparableReasons",
+            "matchRate", "mismatchRate", "evaluationCutoffTime", "warnings", "disclaimer"];
         var safe = {};
         fields.forEach(function (field) { safe[field] = clone(result[field]); });
         safe.observations = Array.isArray(result.observations) ? result.observations.map(function (observation) {
@@ -152,7 +179,11 @@
                 evaluationCloseTime: observation.evaluationCloseTime, source: SOURCE,
                 countsTowardLiveReadiness: false, category: observation.category,
                 comparison: observation.comparison, error: observation.error,
-                candidateKey: observation.candidateKey };
+                candidateKey: observation.candidateKey, reason: observation.reason,
+                legacyDecision: observation.legacyDecision, gateDecision: observation.gateDecision,
+                legacyDecisionSource: observation.legacyDecisionSource,
+                gateDecisionSource: observation.gateDecisionSource,
+                legacyDecisionEvidence: clone(observation.legacyDecisionEvidence) };
         }) : [];
         return JSON.stringify(safe, null, 2);
     }
