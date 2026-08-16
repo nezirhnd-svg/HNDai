@@ -673,7 +673,13 @@ function updateStructureHistoricalShadowReplayUI(result = null) {
     setText("historicalShadowReplayMatches", Number.isSafeInteger(value.matchCount) ? value.matchCount : 0);
     setText("historicalShadowReplayMismatches", Number.isSafeInteger(value.mismatchCount) ? value.mismatchCount : 0);
     setText("historicalShadowReplayFailures", Number.isSafeInteger(value.failureCount) ? value.failureCount : 0);
+    setText("historicalShadowReplayPendingCreated", Number.isSafeInteger(value.pendingCandidateCreatedCount) ? value.pendingCandidateCreatedCount : 0);
+    setText("historicalShadowReplayPendingResolved", Number.isSafeInteger(value.pendingCandidateResolvedCount) ? value.pendingCandidateResolvedCount : 0);
+    setText("historicalShadowReplayPendingExpired", Number.isSafeInteger(value.pendingCandidateExpiredCount) ? value.pendingCandidateExpiredCount : 0);
+    setText("historicalShadowReplayUnmatchedEvents", Number.isSafeInteger(value.unmatchedStructureEventCount) ? value.unmatchedStructureEventCount : 0);
     setText("historicalShadowReplayDuplicateCandidates", Number.isSafeInteger(value.duplicateCandidateCount) ? value.duplicateCandidateCount : 0);
+    setText("historicalShadowReplayLegacyAvailable", Number.isSafeInteger(value.legacyDecisionAvailableCount) ? value.legacyDecisionAvailableCount : 0);
+    setText("historicalShadowReplayGateAvailable", Number.isSafeInteger(value.gateDecisionAvailableCount) ? value.gateDecisionAvailableCount : 0);
     setText("historicalShadowReplayMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
     setText("historicalShadowReplayMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
     setText("historicalShadowReplayReadiness", "NONE");
