@@ -679,7 +679,19 @@ function updateStructureHistoricalShadowReplayUI(result = null) {
     setText("historicalShadowReplayUnmatchedEvents", Number.isSafeInteger(value.unmatchedStructureEventCount) ? value.unmatchedStructureEventCount : 0);
     setText("historicalShadowReplayDuplicateCandidates", Number.isSafeInteger(value.duplicateCandidateCount) ? value.duplicateCandidateCount : 0);
     setText("historicalShadowReplayLegacyAvailable", Number.isSafeInteger(value.legacyDecisionAvailableCount) ? value.legacyDecisionAvailableCount : 0);
+    setText("historicalShadowReplayLegacyAllow", Number.isSafeInteger(value.legacyAllowCount) ? value.legacyAllowCount : 0);
+    setText("historicalShadowReplayLegacyBlock", Number.isSafeInteger(value.legacyBlockCount) ? value.legacyBlockCount : 0);
+    setText("historicalShadowReplayLegacyUnavailable", Number.isSafeInteger(value.legacyUnavailableCount) ? value.legacyUnavailableCount : 0);
     setText("historicalShadowReplayGateAvailable", Number.isSafeInteger(value.gateDecisionAvailableCount) ? value.gateDecisionAvailableCount : 0);
+    const reasonList = document.getElementById("historicalShadowReplayTopLegacyReasons");
+    if (reasonList) {
+        const reasons = Array.isArray(value.byLegacyReason) ? value.byLegacyReason.slice(0, 5) : [];
+        reasonList.replaceChildren(...(reasons.length ? reasons : [{ key: "-", count: null }]).map(item => {
+            const row = document.createElement("li");
+            row.textContent = item.count === null ? "-" : `${item.key}: ${item.count}`;
+            return row;
+        }));
+    }
     setText("historicalShadowReplayMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
     setText("historicalShadowReplayMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
     setText("historicalShadowReplayReadiness", "NONE");
