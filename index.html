@@ -490,6 +490,37 @@ TradeAI Pro
 </div>
 <p class="structure-shadow-safety">Diagnostic eligibility only; this result does not enable paper trading, entries, or real orders.</p>
 </div>
+<div id="structureHistoricalShadowReplay" class="structure-paper-readiness historical-shadow-replay">
+<h3>HISTORICAL SHADOW REPLAY</h3>
+<div class="historical-shadow-replay-selectors">
+<label for="historicalShadowReplaySymbol">Market</label>
+<select id="historicalShadowReplaySymbol"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
+<label for="historicalShadowReplayInterval">Timeframe</label>
+<select id="historicalShadowReplayInterval"><option>15m</option><option>4h</option></select>
+</div>
+<div class="structure-shadow-grid">
+<p>Replay Status</p><strong id="historicalShadowReplayStatus">NOT RUN</strong>
+<p>Source</p><strong id="historicalShadowReplaySource">HISTORICAL_REPLAY</strong>
+<p>Market</p><strong id="historicalShadowReplayMarket">-</strong>
+<p>Timeframe</p><strong id="historicalShadowReplayTimeframe">-</strong>
+<p>Input Candles</p><strong id="historicalShadowReplayInputCandles">0</strong>
+<p>Evaluated Candles</p><strong id="historicalShadowReplayEvaluatedCandles">0</strong>
+<p>Observations</p><strong id="historicalShadowReplayObservations">0</strong>
+<p>Comparable</p><strong id="historicalShadowReplayComparable">0</strong>
+<p>Matches</p><strong id="historicalShadowReplayMatches">0</strong>
+<p>Mismatches</p><strong id="historicalShadowReplayMismatches">0</strong>
+<p>Failures</p><strong id="historicalShadowReplayFailures">0</strong>
+<p>Duplicate Candidates</p><strong id="historicalShadowReplayDuplicateCandidates">0</strong>
+<p>Match Rate</p><strong id="historicalShadowReplayMatchRate">-</strong>
+<p>Mismatch Rate</p><strong id="historicalShadowReplayMismatchRate">-</strong>
+<p>Live Readiness Contribution</p><strong id="historicalShadowReplayReadiness">NONE</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="runHistoricalShadowReplay" type="button">Run Historical Replay</button>
+<button id="exportHistoricalShadowReplay" type="button">Export Replay JSON</button>
+</div>
+<p id="historicalShadowReplaySafety" class="structure-shadow-safety">DOES NOT COUNT TOWARD LIVE READINESS</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -615,6 +646,9 @@ TradeAI Pro
 <script src="js/hndai-v1/structureShadowObservationPlan.js"></script>
 <script src="js/hndai-v1/structureShadowMismatchAnalyzer.js"></script>
 <script src="js/hndai-v1/structurePaperTrialReadinessGate.js"></script>
+<script src="js/hndai-v1/structureHistoricalLegacyCandidateAdapter.js"></script>
+<script src="js/hndai-v1/structureHistoricalReplayBinancePager.js"></script>
+<script src="js/hndai-v1/structureHistoricalShadowReplay.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>

@@ -1,0 +1,22 @@
+"use strict";
+const assert = require("assert"), fs = require("fs"), path = require("path"), vm = require("vm");
+const modulePath = path.resolve(__dirname, "../../js/hndai-v1/structureHistoricalLegacyCandidateAdapter.js");
+const api = require(modulePath), tests = []; function test(name, fn) { tests.push({ name, fn }); }
+function candle(i, close, high, low) { return { openTime: i * 1000, closeTime: i * 1000 + 999,
+    open: close, high, low, close, volume: 10 }; }
+const real = [candle(1, 5, 6, 4), candle(2, 6, 7, 4), candle(3, 10, 12, 3),
+    candle(4, 6, 7, 4), candle(5, 7, 8, 5), candle(6, 13, 14, 12)];
+const config = { symbol: "BTCUSDT", interval: "15m", warmupCandles: 1,
+    maximumEvaluationCandles: 10, includeNonComparable: true, evaluationCutoffTime: real.at(-1).closeTime };
+test("CommonJS API exact", () => assert.deepStrictEqual(Object.keys(api).sort(), ["getSchemaVersion", "evaluateHistoricalShadow"].sort()));
+test("schema exact", () => assert.strictEqual(api.getSchemaVersion(), "HND_STRUCTURE_HISTORICAL_LEGACY_CANDIDATE_ADAPTER_V1"));
+test("synthetic break fixture is not the earlier confirmation candle", () => assert.strictEqual(api.evaluateHistoricalShadow(real, config, real.at(-1).closeTime).comparison, "NOT_COMPARABLE"));
+test("synthetic exact-confirmation dependency becomes comparable", () => { const latest={sourceEventId:"E",direction:"BULLISH",levelConfirmedAtIndex:real.length-1}; const window={HNDStructurePipelineOrchestrator:{analyzeStructure(){return{valid:true,ready:true,latestStructure:latest,snapshotResult:{valid:true}};}},HNDStructureSetupAdapter:{evaluateCandidate(){return{valid:true,gateResult:{decision:"ALLOW"}};}}};vm.runInNewContext(fs.readFileSync(modulePath,"utf8"),{window,JSON,Object,Array,Number,Error});assert.strictEqual(window.HNDStructureHistoricalLegacyCandidateAdapter.evaluateHistoricalShadow(real,config,real.at(-1).closeTime).comparison,"MATCH_ALLOW");});
+test("same latest structure on later candle is not comparable", () => { const latest={sourceEventId:"E",direction:"BULLISH",levelConfirmedAtIndex:real.length-1}; const extended=real.concat([{...real.at(-1),openTime:7000,closeTime:7999}]);const window={HNDStructurePipelineOrchestrator:{analyzeStructure(){return{valid:true,ready:true,latestStructure:latest,snapshotResult:{valid:true}};}},HNDStructureSetupAdapter:{evaluateCandidate(){throw Error("must not compare");}}};vm.runInNewContext(fs.readFileSync(modulePath,"utf8"),{window,JSON,Object,Array,Number,Error});assert.strictEqual(window.HNDStructureHistoricalLegacyCandidateAdapter.evaluateHistoricalShadow(extended,config,extended.at(-1).closeTime).comparison,"NOT_COMPARABLE");});
+test("real candidate is not fabricated without event", () => assert.strictEqual(api.evaluateHistoricalShadow(real.slice(0, 3), config, real[2].closeTime).comparison, "NOT_COMPARABLE"));
+test("prefix only reaches pipeline", () => { let seen = 0; const window = { HNDStructurePipelineOrchestrator: { analyzeStructure(prefix) { seen = prefix.length; return { valid: true, ready: false, latestStructure: null }; } }, HNDStructureSetupAdapter: { evaluateCandidate() { throw Error("must not run"); } } };
+    vm.runInNewContext(fs.readFileSync(modulePath, "utf8"), { window, JSON, Object, Array, Number, Error }); window.HNDStructureHistoricalLegacyCandidateAdapter.evaluateHistoricalShadow(real.slice(0, 4), config, real[3].closeTime); assert.strictEqual(seen, 4); });
+test("dependency exception fail closed", () => { const window = { HNDStructurePipelineOrchestrator: { analyzeStructure() { throw Error("x"); } }, HNDStructureSetupAdapter: {} }; vm.runInNewContext(fs.readFileSync(modulePath, "utf8"), { window, JSON, Object, Array, Number, Error }); assert.strictEqual(window.HNDStructureHistoricalLegacyCandidateAdapter.evaluateHistoricalShadow(real, config, real.at(-1).closeTime).valid, false); });
+test("input not mutated", () => { const before = JSON.stringify(real); api.evaluateHistoricalShadow(real, config, real.at(-1).closeTime); assert.strictEqual(JSON.stringify(real), before); });
+test("no live state writers", () => assert.ok(!/(Collection|Telemetry|Readiness|SetupEngine|TradeEngine|localStorage|fetch\()/.test(fs.readFileSync(modulePath, "utf8"))));
+(async()=>{let n=0;for(const t of tests){try{await t.fn();n++;}catch(e){console.error(`FAIL: ${t.name}`);throw e;}}console.log(`Historical Legacy Candidate Adapter tests passed: ${tests.length} scenarios, ${n} assertions.`);})().catch(e=>{console.error(e);process.exitCode=1;});
