@@ -69,7 +69,8 @@
             duplicateCandidateCount: 0, pendingCandidateCreatedCount: 0,
             pendingCandidateResolvedCount: 0, pendingCandidateExpiredCount: 0,
             unmatchedStructureEventCount: 0, legacyDecisionAvailableCount: 0,
-            gateDecisionAvailableCount: 0, notComparableReasons: {},
+            legacyAllowCount: 0, legacyBlockCount: 0, legacyUnavailableCount: 0,
+            gateDecisionAvailableCount: 0, notComparableReasons: {}, byLegacyReason: [],
             matchRate: null, mismatchRate: null, observations: [], warnings: [], disclaimer: DISCLAIMER };
     }
     function classify(value) {
@@ -97,7 +98,7 @@
             return base(candles, cfg, "DEPENDENCY_FAILURE", "REPLAY_EVALUATOR_UNAVAILABLE");
         var output = base(candles, cfg, "COMPLETED_NO_COMPARABLE", null);
         var comparedCandidateKeys = new Set();
-        var lifecycle = { candidates: [], seenCandidateKeys: [], resolvedEventIds: [] };
+        var lifecycle = { candidates: [], seenCandidateKeys: [], resolvedEventIds: [], consumedCandidateKeys: [] };
         var end = Math.min(closed.length, cfg.warmupCandles + cfg.maximumEvaluationCandles);
         for (var index = 0; index < end; index += 1) {
             var candle = closed[index], result;
@@ -113,9 +114,15 @@
             lifecycle = result && result.lifecycle ? clone(result.lifecycle) : lifecycle;
             ["pendingCandidateCreatedCount", "pendingCandidateResolvedCount", "pendingCandidateExpiredCount",
                 "duplicateCandidateCount", "unmatchedStructureEventCount", "legacyDecisionAvailableCount",
-                "gateDecisionAvailableCount"].forEach(function (field) {
+                "legacyAllowCount", "legacyBlockCount", "legacyUnavailableCount", "gateDecisionAvailableCount"].forEach(function (field) {
                 if (result && Number.isSafeInteger(result[field]) && result[field] >= 0) output[field] += result[field];
             });
+            if (result && result.legacyReasonCounts && typeof result.legacyReasonCounts === "object") {
+                Object.keys(result.legacyReasonCounts).forEach(function (reason) {
+                    if (!output._legacyReasonCounts) output._legacyReasonCounts = {};
+                    output._legacyReasonCounts[reason] = (output._legacyReasonCounts[reason] || 0) + result.legacyReasonCounts[reason];
+                });
+            }
             if (index < cfg.warmupCandles) continue;
             var values = result && Array.isArray(result.comparisons) && result.comparisons.length ? result.comparisons : [result];
             output.evaluatedCandleCount += 1;
@@ -155,6 +162,10 @@
             });
         }
         output.observationCount = output.observations.length;
+        output.byLegacyReason = Object.keys(output._legacyReasonCounts || {}).map(function (key) {
+            return { key: key, count: output._legacyReasonCounts[key] };
+        }).sort(function (a, b) { return b.count - a.count || a.key.localeCompare(b.key); });
+        delete output._legacyReasonCounts;
         output.matchRate = output.comparableCount ? Math.round(output.matchCount / output.comparableCount * 10000) / 100 : null;
         output.mismatchRate = output.comparableCount ? Math.round(output.mismatchCount / output.comparableCount * 10000) / 100 : null;
         if (output.duplicateCandidateCount) output.warnings.push("DUPLICATE_CANDIDATES_SKIPPED:" + output.duplicateCandidateCount);
@@ -171,6 +182,7 @@
             "notApplicableCount", "duplicateCandidateCount", "pendingCandidateCreatedCount",
             "pendingCandidateResolvedCount", "pendingCandidateExpiredCount", "unmatchedStructureEventCount",
             "legacyDecisionAvailableCount", "gateDecisionAvailableCount", "notComparableReasons",
+            "legacyAllowCount", "legacyBlockCount", "legacyUnavailableCount", "byLegacyReason",
             "matchRate", "mismatchRate", "evaluationCutoffTime", "warnings", "disclaimer"];
         var safe = {};
         fields.forEach(function (field) { safe[field] = clone(result[field]); });

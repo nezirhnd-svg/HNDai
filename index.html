@@ -515,7 +515,10 @@ TradeAI Pro
 <p>Pending Expired</p><strong id="historicalShadowReplayPendingExpired">0</strong>
 <p>Unmatched Events</p><strong id="historicalShadowReplayUnmatchedEvents">0</strong>
 <p>Duplicate Candidates</p><strong id="historicalShadowReplayDuplicateCandidates">0</strong>
-<p>Legacy Decisions Available</p><strong id="historicalShadowReplayLegacyAvailable">0</strong>
+<p>Legacy Available</p><strong id="historicalShadowReplayLegacyAvailable">0</strong>
+<p>Legacy Allow</p><strong id="historicalShadowReplayLegacyAllow">0</strong>
+<p>Legacy Block</p><strong id="historicalShadowReplayLegacyBlock">0</strong>
+<p>Legacy Unavailable</p><strong id="historicalShadowReplayLegacyUnavailable">0</strong>
 <p>Gate Decisions Available</p><strong id="historicalShadowReplayGateAvailable">0</strong>
 <p>Match Rate</p><strong id="historicalShadowReplayMatchRate">-</strong>
 <p>Mismatch Rate</p><strong id="historicalShadowReplayMismatchRate">-</strong>
@@ -526,6 +529,7 @@ TradeAI Pro
 <button id="exportHistoricalShadowReplay" type="button">Export Replay JSON</button>
 </div>
 <p id="historicalShadowReplaySafety" class="structure-shadow-safety">DOES NOT COUNT TOWARD LIVE READINESS</p>
+<h4>Top Legacy Reasons</h4><ul id="historicalShadowReplayTopLegacyReasons"><li>-</li></ul>
 </div>
 </div>
 
@@ -653,11 +657,12 @@ TradeAI Pro
 <script src="js/hndai-v1/structureShadowMismatchAnalyzer.js"></script>
 <script src="js/hndai-v1/structurePaperTrialReadinessGate.js"></script>
 <script src="js/hndai-v1/structurePendingCandidateContract.js"></script>
+<script src="js/setupEngine.js"></script>
+<script src="js/hndai-v1/structureHistoricalLegacyEvaluator.js"></script>
 <script src="js/hndai-v1/structureHistoricalLegacyCandidateAdapter.js"></script>
 <script src="js/hndai-v1/structureHistoricalReplayBinancePager.js"></script>
 <script src="js/hndai-v1/structureHistoricalShadowReplay.js"></script>
 <script src="js/ui.js"></script>
-<script src="js/setupEngine.js"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/backtestBenchmark.js"></script>
 <script src="js/historicalDataStore.js"></script>

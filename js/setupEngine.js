@@ -249,7 +249,7 @@
         });
     }
 
-    function createSetupDebug(input, existingSetup = null) {
+    function createSetupDebug(input, existingSetup = null, evaluatedAt = Date.now()) {
         const orderBlocks = Array.isArray(input.qualifiedPriceZones?.orderBlocks)
             ? input.qualifiedPriceZones.orderBlocks.length : 0;
         const fvgs = Array.isArray(input.qualifiedPriceZones?.fvgs)
@@ -269,7 +269,7 @@
             signal,
             expectedDirection,
             expectedZoneType,
-            evaluatedAt: Date.now(),
+            evaluatedAt,
             primaryReason: null,
             existingSetup: {
                 present: Boolean(existingSetup),
@@ -344,8 +344,12 @@
             second.structureConfirmationIndex - first.structureConfirmationIndex || first.key.localeCompare(second.key);
     }
 
-    function buildCandidatesDetailed(input = {}) {
-        const debug = createSetupDebug(input);
+    function buildCandidatesDetailed(input = {}, pureOptions = null) {
+        const historicalConsumedKeys = pureOptions && pureOptions.consumedCandidateKeys instanceof Set
+            ? pureOptions.consumedCandidateKeys : consumedSetupKeys;
+        const evaluationTime = pureOptions && Number.isSafeInteger(pureOptions.evaluationTime)
+            ? pureOptions.evaluationTime : Date.now();
+        const debug = createSetupDebug(input, null, evaluationTime);
         const price = input.price;
         const direction = input.analysis?.signal === "LONG" ? "LONG"
             : input.analysis?.signal === "SHORT" ? "SHORT" : null;
@@ -475,9 +479,9 @@
                 zoneHeightATR: candidate.zoneHeightATR,
                 structureEventId: candidate.structureEventId,
                 zoneIds: candidate.zoneIds.slice(),
-                consumed: consumedSetupKeys.has(candidate.key),
+                consumed: historicalConsumedKeys.has(candidate.key),
                 accepted: candidate.distanceATR <= HND_SETUP_MAX_DISTANCE_ATR &&
-                    candidate.quality >= HND_SETUP_MIN_QUALITY && !consumedSetupKeys.has(candidate.key)
+                    candidate.quality >= HND_SETUP_MIN_QUALITY && !historicalConsumedKeys.has(candidate.key)
             }));
         if (!distanceAccepted.length) {
             debug.primaryReason = HND_SETUP_DEBUG_REASONS.ALL_CANDIDATES_TOO_FAR;
@@ -499,7 +503,7 @@
             return { candidates: [], debug };
         }
         const accepted = qualityAccepted.filter(candidate => {
-            const consumed = consumedSetupKeys.has(candidate.key);
+            const consumed = historicalConsumedKeys.has(candidate.key);
             if (consumed) {
                 debug.consumed.rejected += 1;
                 addSetupRejectedSample(debug, {
@@ -523,6 +527,35 @@
 
     function buildCandidates(input = {}) {
         return buildCandidatesDetailed(input).candidates;
+    }
+
+    function evaluateCandidateDecisionBundle(input = {}, consumedCandidateKeys = [], evaluationTime) {
+        if (!Array.isArray(consumedCandidateKeys) || !Number.isSafeInteger(evaluationTime) || evaluationTime <= 0)
+            return { valid: false, error: "INVALID_PURE_EVALUATION_INPUT" };
+        const consumed = new Set();
+        for (const key of consumedCandidateKeys) {
+            if (typeof key !== "string" || !key || consumed.has(key))
+                return { valid: false, error: "INVALID_CONSUMED_CANDIDATE_KEYS" };
+            consumed.add(key);
+        }
+        const detailed = buildCandidatesDetailed(clone(input), {
+            consumedCandidateKeys: consumed, evaluationTime
+        });
+        const selected = detailed.candidates[0] || null;
+        return clone({ valid: true, error: null, decision: selected ? "ALLOW" : "BLOCK",
+            decisionSource: "HND_SETUP_ENGINE_BUILD_CANDIDATES_DETAILED_V4_1",
+            reason: detailed.debug.primaryReason, candidate: selected,
+            evidence: { debugVersion: detailed.debug.version,
+                summary: {
+                    sourceZones: detailed.debug.source.total,
+                    validZones: detailed.debug.validation.acceptedTotal,
+                    directionMatched: detailed.debug.direction.matchedTotal,
+                    priceSideAccepted: detailed.debug.priceSide.accepted,
+                    distanceAccepted: detailed.debug.distance.accepted,
+                    qualityAccepted: detailed.debug.quality.accepted,
+                    consumedRejected: detailed.debug.consumed.rejected,
+                    acceptedCandidates: detailed.debug.final.candidates
+                }, topCandidates: detailed.debug.topCandidates }, debug: detailed.debug });
     }
 
     function snapshotAnalysis(analysis) {
@@ -790,6 +823,6 @@
     window.HNDSetupEngine = {
         evaluate, reset, getState, getCurrentSetup, getHistory, buildCandidates,
         updateExistingSetup, getLastDebug, getLastStructureShadow,
-        explainLastEvaluation, buildCandidatesDetailed
+        explainLastEvaluation, buildCandidatesDetailed, evaluateCandidateDecisionBundle
     };
 })();

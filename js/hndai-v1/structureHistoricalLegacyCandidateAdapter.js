@@ -3,7 +3,7 @@
     var deps = typeof module === "object" && module.exports ? {
         pipeline: require("./structurePipelineOrchestrator.js"), adapter: require("./structureSetupAdapter.js"),
         swingDetector: require("./swingDetector.js"), pendingContract: require("./structurePendingCandidateContract.js"),
-        legacyEvaluator: null
+        legacyEvaluator: require("./structureHistoricalLegacyEvaluator.js")
     } : { pipeline: root && root.HNDStructurePipelineOrchestrator, adapter: root && root.HNDStructureSetupAdapter,
         swingDetector: root && root.HNDSwingDetector, pendingContract: root && root.HNDStructurePendingCandidateContract,
         legacyEvaluator: root && root.HNDHistoricalLegacySetupEvaluator };
@@ -16,15 +16,17 @@
     function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
     function getSchemaVersion() { return SCHEMA; }
     function emptyLifecycle(value) {
-        return value && Array.isArray(value.candidates) && Array.isArray(value.seenCandidateKeys) && Array.isArray(value.resolvedEventIds)
-            ? clone(value) : { candidates: [], seenCandidateKeys: [], resolvedEventIds: [] };
+        return value && Array.isArray(value.candidates) && Array.isArray(value.seenCandidateKeys) &&
+            Array.isArray(value.resolvedEventIds) && Array.isArray(value.consumedCandidateKeys)
+            ? clone(value) : { candidates: [], seenCandidateKeys: [], resolvedEventIds: [], consumedCandidateKeys: [] };
     }
     function failure(error, lifecycle) { return { valid: false, error: error, schemaVersion: SCHEMA,
         comparison: "PIPELINE_FAILED", legacyDecision: null, gateDecision: null, candidateKey: null,
         comparisons: [], lifecycle: emptyLifecycle(lifecycle), pendingCandidateCreatedCount: 0,
         pendingCandidateResolvedCount: 0, pendingCandidateExpiredCount: 0,
         duplicateCandidateCount: 0, unmatchedStructureEventCount: 0,
-        legacyDecisionAvailableCount: 0, gateDecisionAvailableCount: 0 }; }
+        legacyDecisionAvailableCount: 0, legacyAllowCount: 0, legacyBlockCount: 0,
+        legacyUnavailableCount: 0, legacyReasonCounts: {}, gateDecisionAvailableCount: 0 }; }
     function notComparable(candidateKey, reason, gateDecision, gateEvidence) {
         return { valid: true, error: null, comparison: "NOT_COMPARABLE", legacyDecision: null,
             gateDecision: gateDecision || null, candidateKey: candidateKey, reason: reason,
@@ -47,7 +49,11 @@
         if (!analysis || analysis.valid !== true || !swings || swings.valid !== true) return failure("STRUCTURE_ANALYSIS_FAILED", lifecycle);
         var counts = { pendingCandidateCreatedCount: 0, pendingCandidateResolvedCount: 0,
             pendingCandidateExpiredCount: 0, duplicateCandidateCount: 0, unmatchedStructureEventCount: 0,
-            legacyDecisionAvailableCount: 0, gateDecisionAvailableCount: 0 };
+            legacyDecisionAvailableCount: 0, legacyAllowCount: 0, legacyBlockCount: 0,
+            legacyUnavailableCount: 0, legacyReasonCounts: {}, gateDecisionAvailableCount: 0 };
+        function countLegacyReason(reason) {
+            counts.legacyReasonCounts[reason] = (counts.legacyReasonCounts[reason] || 0) + 1;
+        }
         var seen = new Set(lifecycle.seenCandidateKeys), resolvedEvents = new Set(lifecycle.resolvedEventIds);
         var candidates = lifecycle.candidates.map(clone), comparisons = [];
         swings.events.filter(function (swing) { return swing.confirmedAtIndex === index; }).forEach(function (swing) {
@@ -82,31 +88,47 @@
                 var gateEvidence = { decision: gate, reason: result.gateResult.reason || null,
                     structureEventId: event.id, evaluationAtIndex: index };
                 if (!deps.legacyEvaluator || typeof deps.legacyEvaluator.evaluateHistoricalLegacy !== "function") {
+                    counts.legacyUnavailableCount += 1; countLegacyReason("LEGACY_EVALUATOR_UNAVAILABLE");
                     comparisons.push(notComparable(resolved.key, "LEGACY_EVALUATOR_UNAVAILABLE", gate, gateEvidence));
                     return;
                 }
                 var legacy;
                 try {
                     legacy = deps.legacyEvaluator.evaluateHistoricalLegacy(clone(prefix), {
-                        symbol: config.symbol, interval: config.interval, evaluationAtIndex: index,
-                        evaluationCloseTime: evaluationCloseTime
+                        symbol: config.symbol, interval: config.interval, evaluationIndex: index,
+                        evaluationCloseTime: evaluationCloseTime, pendingCandidate: clone(resolved),
+                        consumedCandidateKeys: clone(lifecycle.consumedCandidateKeys),
+                        higherTimeframeCandles: []
                     });
                 } catch (error) {
+                    counts.legacyUnavailableCount += 1; countLegacyReason("LEGACY_EVALUATOR_EXCEPTION");
                     comparisons.push(notComparable(resolved.key, "LEGACY_EVALUATOR_EXCEPTION", gate, gateEvidence));
                     return;
                 }
-                if (!legacy || legacy.valid !== true || !["ALLOW", "BLOCK"].includes(legacy.decision) ||
-                    typeof legacy.source !== "string" || !legacy.source || !legacy.evidence ||
+                if (!legacy || legacy.valid !== true || legacy.decision === "UNAVAILABLE") {
+                    counts.legacyUnavailableCount += 1;
+                    countLegacyReason(legacy && legacy.reason || "LEGACY_EVALUATOR_MALFORMED");
+                    comparisons.push(notComparable(resolved.key, legacy && legacy.reason || "LEGACY_EVALUATOR_MALFORMED", gate, gateEvidence));
+                    return;
+                }
+                if (!["ALLOW", "BLOCK"].includes(legacy.decision) ||
+                    typeof legacy.decisionSource !== "string" || !legacy.decisionSource || !legacy.evidence ||
                     typeof legacy.evidence !== "object" || Array.isArray(legacy.evidence)) {
+                    counts.legacyUnavailableCount += 1; countLegacyReason("LEGACY_EVALUATOR_MALFORMED");
                     comparisons.push(notComparable(resolved.key, "LEGACY_EVALUATOR_MALFORMED", gate, gateEvidence));
                     return;
                 }
                 counts.legacyDecisionAvailableCount += 1;
+                counts[legacy.decision === "ALLOW" ? "legacyAllowCount" : "legacyBlockCount"] += 1;
+                countLegacyReason(legacy.reason);
+                if (legacy.decision === "ALLOW" && typeof legacy.candidateKey === "string" && legacy.candidateKey &&
+                    lifecycle.consumedCandidateKeys.indexOf(legacy.candidateKey) === -1)
+                    lifecycle.consumedCandidateKeys.push(legacy.candidateKey);
                 var comparison = legacy.decision === gate ? "MATCH_" + gate
                     : legacy.decision === "ALLOW" ? "LEGACY_ALLOW_GATE_BLOCK" : "LEGACY_BLOCK_GATE_ALLOW";
                 comparisons.push({ valid: true, error: null, comparison: comparison,
                     legacyDecision: legacy.decision, gateDecision: gate, candidateKey: resolved.key,
-                    reason: "VERIFIED_DUAL_DECISION", legacyDecisionSource: legacy.source,
+                    reason: "VERIFIED_DUAL_DECISION", legacyDecisionSource: legacy.decisionSource,
                     gateDecisionSource: "HND_STRUCTURE_SETUP_ADAPTER_V1",
                     legacyDecisionEvidence: clone(legacy.evidence), gateDecisionEvidence: gateEvidence });
             } catch (error) { comparisons.push({ valid: false, error: "GATE_EVALUATION_EXCEPTION", comparison: "PIPELINE_FAILED", candidateKey: resolved.key }); }
@@ -117,7 +139,8 @@
             if (expired.valid) { counts.pendingCandidateExpiredCount += 1; return expired.candidate; }
             return candidate;
         });
-        lifecycle = { candidates: candidates, seenCandidateKeys: Array.from(seen), resolvedEventIds: Array.from(resolvedEvents) };
+        lifecycle = { candidates: candidates, seenCandidateKeys: Array.from(seen),
+            resolvedEventIds: Array.from(resolvedEvents), consumedCandidateKeys: lifecycle.consumedCandidateKeys.slice() };
         var first = comparisons[0] || notComparable(null, "NO_RESOLVED_PENDING_CANDIDATE", null, null);
         return Object.assign({ schemaVersion: SCHEMA, comparisons: comparisons, lifecycle: lifecycle }, counts, first);
     }
