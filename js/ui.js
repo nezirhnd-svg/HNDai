@@ -682,6 +682,8 @@ function updateStructureHistoricalShadowReplayUI(result = null) {
     setText("historicalShadowReplayLegacyAllow", Number.isSafeInteger(value.legacyAllowCount) ? value.legacyAllowCount : 0);
     setText("historicalShadowReplayLegacyBlock", Number.isSafeInteger(value.legacyBlockCount) ? value.legacyBlockCount : 0);
     setText("historicalShadowReplayLegacyUnavailable", Number.isSafeInteger(value.legacyUnavailableCount) ? value.legacyUnavailableCount : 0);
+    setText("historicalShadowReplayBuilderReady", Number.isSafeInteger(value.builderReadyCount) ? value.builderReadyCount : 0);
+    setText("historicalShadowReplayBuilderUnavailable", Number.isSafeInteger(value.builderUnavailableCount) ? value.builderUnavailableCount : 0);
     setText("historicalShadowReplayGateAvailable", Number.isSafeInteger(value.gateDecisionAvailableCount) ? value.gateDecisionAvailableCount : 0);
     const reasonList = document.getElementById("historicalShadowReplayTopLegacyReasons");
     if (reasonList) {
@@ -691,6 +693,16 @@ function updateStructureHistoricalShadowReplayUI(result = null) {
             row.textContent = item.count === null ? "-" : `${item.key}: ${item.count}`;
             return row;
         }));
+    }
+    const builderList = document.getElementById("historicalShadowReplayTopBuilderStatus");
+    if (builderList) {
+        builderList.textContent = "";
+        const statuses = Array.isArray(value.byBuilderStatus) ? value.byBuilderStatus.slice(0, 5) : [];
+        (statuses.length ? statuses : [{ key: "-", count: 0 }]).forEach(item => {
+            const row = document.createElement("li");
+            row.textContent = item.key === "-" ? "-" : `${item.key}: ${item.count}`;
+            builderList.appendChild(row);
+        });
     }
     setText("historicalShadowReplayMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
     setText("historicalShadowReplayMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");

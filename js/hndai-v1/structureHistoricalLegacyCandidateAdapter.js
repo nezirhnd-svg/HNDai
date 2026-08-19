@@ -3,10 +3,11 @@
     var deps = typeof module === "object" && module.exports ? {
         pipeline: require("./structurePipelineOrchestrator.js"), adapter: require("./structureSetupAdapter.js"),
         swingDetector: require("./swingDetector.js"), pendingContract: require("./structurePendingCandidateContract.js"),
-        legacyEvaluator: require("./structureHistoricalLegacyEvaluator.js")
+        legacyEvaluator: require("./structureHistoricalLegacyEvaluator.js"), timeframeAggregator: require("./timeframeAggregator.js")
     } : { pipeline: root && root.HNDStructurePipelineOrchestrator, adapter: root && root.HNDStructureSetupAdapter,
         swingDetector: root && root.HNDSwingDetector, pendingContract: root && root.HNDStructurePendingCandidateContract,
-        legacyEvaluator: root && root.HNDHistoricalLegacySetupEvaluator };
+        legacyEvaluator: root && (root.HNDStructureHistoricalLegacyEvaluator || root.HNDHistoricalLegacySetupEvaluator),
+        timeframeAggregator: root && root.HNDTimeframeAggregator };
     var api = factory(deps);
     if (typeof module === "object" && module.exports) module.exports = api;
     if (root && typeof root === "object") root.HNDStructureHistoricalLegacyCandidateAdapter = api;
@@ -26,12 +27,13 @@
         pendingCandidateResolvedCount: 0, pendingCandidateExpiredCount: 0,
         duplicateCandidateCount: 0, unmatchedStructureEventCount: 0,
         legacyDecisionAvailableCount: 0, legacyAllowCount: 0, legacyBlockCount: 0,
-        legacyUnavailableCount: 0, legacyReasonCounts: {}, gateDecisionAvailableCount: 0 }; }
-    function notComparable(candidateKey, reason, gateDecision, gateEvidence) {
+        legacyUnavailableCount: 0, legacyReasonCounts: {}, builderStatusCounts: {}, gateDecisionAvailableCount: 0 }; }
+    function notComparable(candidateKey, reason, gateDecision, gateEvidence, builderStatus) {
         return { valid: true, error: null, comparison: "NOT_COMPARABLE", legacyDecision: null,
             gateDecision: gateDecision || null, candidateKey: candidateKey, reason: reason,
             legacyDecisionSource: null, gateDecisionSource: gateDecision ? "HND_STRUCTURE_SETUP_ADAPTER_V1" : null,
-            legacyDecisionEvidence: null, gateDecisionEvidence: gateEvidence || null };
+            legacyDecisionEvidence: null, gateDecisionEvidence: gateEvidence || null,
+            builderStatus: builderStatus || null };
     }
     function evaluateHistoricalShadow(prefix, config, evaluationCloseTime, lifecycleInput) {
         var lifecycle = emptyLifecycle(lifecycleInput), index = prefix && prefix.length - 1;
@@ -50,9 +52,13 @@
         var counts = { pendingCandidateCreatedCount: 0, pendingCandidateResolvedCount: 0,
             pendingCandidateExpiredCount: 0, duplicateCandidateCount: 0, unmatchedStructureEventCount: 0,
             legacyDecisionAvailableCount: 0, legacyAllowCount: 0, legacyBlockCount: 0,
-            legacyUnavailableCount: 0, legacyReasonCounts: {}, gateDecisionAvailableCount: 0 };
+            legacyUnavailableCount: 0, legacyReasonCounts: {}, builderStatusCounts: {}, gateDecisionAvailableCount: 0 };
         function countLegacyReason(reason) {
             counts.legacyReasonCounts[reason] = (counts.legacyReasonCounts[reason] || 0) + 1;
+        }
+        function countBuilderStatus(status) {
+            if (typeof status === "string" && status)
+                counts.builderStatusCounts[status] = (counts.builderStatusCounts[status] || 0) + 1;
         }
         var seen = new Set(lifecycle.seenCandidateKeys), resolvedEvents = new Set(lifecycle.resolvedEventIds);
         var candidates = lifecycle.candidates.map(clone), comparisons = [];
@@ -94,11 +100,23 @@
                 }
                 var legacy;
                 try {
+                    var higherTimeframeCandles = [];
+                    if (deps.timeframeAggregator && typeof deps.timeframeAggregator.aggregateCandles === "function") {
+                        var aggregation = deps.timeframeAggregator.aggregateCandles(clone(prefix), {
+                            sourceInterval: config.interval, targetInterval: config.interval === "15m" ? "4h" : "1d",
+                            nowMs: evaluationCloseTime
+                        });
+                        if (aggregation && aggregation.valid === true && Array.isArray(aggregation.candles))
+                            higherTimeframeCandles = aggregation.candles.filter(function (item) {
+                                return item.isClosed === true && item.closeTime <= evaluationCloseTime;
+                            }).map(function (item) { return { openTime: item.openTime, closeTime: item.closeTime,
+                                open: item.open, high: item.high, low: item.low, close: item.close, volume: item.volume }; });
+                    }
                     legacy = deps.legacyEvaluator.evaluateHistoricalLegacy(clone(prefix), {
                         symbol: config.symbol, interval: config.interval, evaluationIndex: index,
                         evaluationCloseTime: evaluationCloseTime, pendingCandidate: clone(resolved),
                         consumedCandidateKeys: clone(lifecycle.consumedCandidateKeys),
-                        higherTimeframeCandles: []
+                        higherTimeframeCandles: higherTimeframeCandles
                     });
                 } catch (error) {
                     counts.legacyUnavailableCount += 1; countLegacyReason("LEGACY_EVALUATOR_EXCEPTION");
@@ -106,9 +124,11 @@
                     return;
                 }
                 if (!legacy || legacy.valid !== true || legacy.decision === "UNAVAILABLE") {
+                    countBuilderStatus(legacy && legacy.builderStatus);
                     counts.legacyUnavailableCount += 1;
                     countLegacyReason(legacy && legacy.reason || "LEGACY_EVALUATOR_MALFORMED");
-                    comparisons.push(notComparable(resolved.key, legacy && legacy.reason || "LEGACY_EVALUATOR_MALFORMED", gate, gateEvidence));
+                    comparisons.push(notComparable(resolved.key, legacy && legacy.reason || "LEGACY_EVALUATOR_MALFORMED", gate, gateEvidence,
+                        legacy && legacy.builderStatus));
                     return;
                 }
                 if (!["ALLOW", "BLOCK"].includes(legacy.decision) ||
@@ -119,6 +139,7 @@
                     return;
                 }
                 counts.legacyDecisionAvailableCount += 1;
+                countBuilderStatus(legacy.builderStatus);
                 counts[legacy.decision === "ALLOW" ? "legacyAllowCount" : "legacyBlockCount"] += 1;
                 countLegacyReason(legacy.reason);
                 if (legacy.decision === "ALLOW" && typeof legacy.candidateKey === "string" && legacy.candidateKey &&
@@ -130,7 +151,8 @@
                     legacyDecision: legacy.decision, gateDecision: gate, candidateKey: resolved.key,
                     reason: "VERIFIED_DUAL_DECISION", legacyDecisionSource: legacy.decisionSource,
                     gateDecisionSource: "HND_STRUCTURE_SETUP_ADAPTER_V1",
-                    legacyDecisionEvidence: clone(legacy.evidence), gateDecisionEvidence: gateEvidence });
+                    legacyDecisionEvidence: clone(legacy.evidence), gateDecisionEvidence: gateEvidence,
+                    builderStatus: legacy.builderStatus || null });
             } catch (error) { comparisons.push({ valid: false, error: "GATE_EVALUATION_EXCEPTION", comparison: "PIPELINE_FAILED", candidateKey: resolved.key }); }
         });
         candidates = candidates.map(function (candidate) {

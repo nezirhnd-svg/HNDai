@@ -26,8 +26,9 @@ const TIMEFRAME_MAP = {
     "1d": { binance: "1d", tradingView: "D" }
 };
 
-const HND_STRUCTURE_HISTORY_LIMIT = 100;
-const HND_RAW_ZONE_HISTORY_LIMIT = 200;
+const HND_STRUCTURE_INPUT_OPTIONS = Object.freeze(getLiveStructureHistoricalInputOptions());
+const HND_STRUCTURE_HISTORY_LIMIT = HND_STRUCTURE_INPUT_OPTIONS.structureHistoryLimit;
+const HND_RAW_ZONE_HISTORY_LIMIT = HND_STRUCTURE_INPUT_OPTIONS.rawZoneHistoryLimit;
 const HND_STRUCTURE_SHADOW_LEFT_BARS = 2;
 const HND_STRUCTURE_SHADOW_RIGHT_BARS = 2;
 let structureShadowEnabled = false;
@@ -112,34 +113,9 @@ window.HNDStructureShadowRuntimeTestAPI = Object.freeze({
     isEnabled: () => structureShadowEnabled
 });
 
-const HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS = Object.freeze({
-    maxEvents: HND_STRUCTURE_HISTORY_LIMIT,
-    orderBlocksPerEvent: 2,
-    fvgsPerEvent: 2,
-    maxQualifiedOrderBlocks: 24,
-    maxQualifiedFVGs: 24,
-    nestedContainmentToleranceATR: 0.05,
-    nearZoneMidpointATR: 0.18,
-    nearZoneOverlapRatio: 0.70,
-    zoneClusterMaxEventBars: 24,
-    invalidatedMinSignificanceScore: 70,
-    invalidatedMinZoneHeightATR: 0.18,
-    mitigatedMinSignificanceScore: 55,
-    mitigatedMinZoneHeightATR: 0.10,
-    includeBOS: true,
-    includeCHoCH: true,
-    requireClosedConfirmation: true,
-    atrPeriod: 14,
-    minLegBars: 4,
-    minLegRangeATR: 1.25,
-    minBreakDistanceATR: 0.10,
-    minConfirmationBodyATR: 0.22,
-    minConfirmationBodyRatio: 0.45,
-    minStructureAdvanceATR: 0.08,
-    minOrderBlockHeightATR: 0.12,
-    minFVGHeightATR: 0.06,
-    requireExternalProgression: true
-});
+const HND_STRUCTURE_ZONE_QUALIFICATION_OPTIONS = Object.freeze(
+    getLiveStructureZoneQualificationOptions()
+);
 
 // TradingView
 function initTradingView() {
@@ -457,7 +433,7 @@ async function startEngine() {
             typeof detectFVGs === "function"
         ) {
             cycleStructureEvents = detectStructureEvents({
-                lookback: 3,
+                lookback: HND_STRUCTURE_INPUT_OPTIONS.structureLookback,
                 limit: HND_STRUCTURE_HISTORY_LIMIT,
                 includeBOS: true,
                 includeCHoCH: true

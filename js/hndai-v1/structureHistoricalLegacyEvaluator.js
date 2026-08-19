@@ -23,9 +23,10 @@
     function exact(value, fields) { if (!value || typeof value !== "object" || Array.isArray(value)) return false;
         var keys = Object.keys(value).sort(), expected = fields.slice().sort();
         return keys.length === expected.length && expected.every(function (key, index) { return key === keys[index]; }); }
-    function unavailable(reason, error, warnings) { return { valid: true, error: error || null,
+    function unavailable(reason, error, warnings, builderStatus) { return { valid: true, error: error || null,
         schemaVersion: SCHEMA, decision: "UNAVAILABLE", decisionSource: null, evidence: null,
-        reason: reason, candidateKey: null, filterResults: [], warnings: warnings || [] }; }
+        reason: reason, candidateKey: null, filterResults: [], warnings: warnings || [],
+        builderStatus: builderStatus || null }; }
     function validCandle(candle) { return exact(candle, ["openTime", "closeTime", "open", "high", "low", "close", "volume"]) &&
         Number.isSafeInteger(candle.openTime) && Number.isSafeInteger(candle.closeTime) && candle.openTime > 0 && candle.closeTime > candle.openTime &&
         [candle.open, candle.high, candle.low, candle.close, candle.volume].every(Number.isFinite) && candle.open > 0 && candle.high > 0 && candle.low > 0 && candle.close > 0 && candle.volume >= 0 &&
@@ -70,12 +71,20 @@
         var error = validate(safePrefix, safeContext); if (error) return unavailable(error, null);
         if (safePrefix.length < 200) return unavailable("INSUFFICIENT_WARMUP", null);
         var builder = getInputBuilder();
-        if (!builder || typeof builder.buildHistoricalLegacyInput !== "function") return unavailable("LEGACY_INPUT_BUILDER_UNAVAILABLE", null);
+        if (!builder || typeof builder.buildHistoricalInput !== "function") return unavailable("LEGACY_INPUT_BUILDER_UNAVAILABLE", null, [], "DEPENDENCY_FAILURE");
         var bundle;
-        try { bundle = builder.buildHistoricalLegacyInput(clone(safePrefix), clone(safeContext)); }
-        catch (exception) { return unavailable("LEGACY_INPUT_BUILDER_EXCEPTION", "DEPENDENCY_EXCEPTION"); }
-        if (!bundle || bundle.valid !== true || !bundle.input || typeof bundle.input !== "object" || Array.isArray(bundle.input))
-            return unavailable("LEGACY_INPUT_BUNDLE_MALFORMED", null);
+        var builderContext = { symbol: safeContext.symbol, interval: safeContext.interval,
+            evaluationIndex: safeContext.evaluationIndex, evaluationCloseTime: safeContext.evaluationCloseTime,
+            pendingCandidate: clone(safeContext.pendingCandidate),
+            higherTimeframeCandles: clone(safeContext.higherTimeframeCandles) };
+        try { bundle = builder.buildHistoricalInput(clone(safePrefix), builderContext); }
+        catch (exception) { return unavailable("LEGACY_INPUT_BUILDER_EXCEPTION", "DEPENDENCY_EXCEPTION", [], "DEPENDENCY_FAILURE"); }
+        if (!bundle || typeof bundle.status !== "string")
+            return unavailable("LEGACY_INPUT_BUNDLE_MALFORMED", null, [], "DEPENDENCY_FAILURE");
+        if (bundle.status !== "INPUT_READY") return unavailable(
+            "LEGACY_INPUT_BUILDER_" + bundle.status, bundle.error || null, bundle.warnings, bundle.status);
+        if (bundle.valid !== true || !bundle.input || typeof bundle.input !== "object" || Array.isArray(bundle.input))
+            return unavailable("LEGACY_INPUT_BUNDLE_MALFORMED", null, [], bundle.status);
         var core = getCore();
         if (!core || typeof core.evaluateCandidateDecisionBundle !== "function") return unavailable("LEGACY_SHARED_CORE_UNAVAILABLE", null);
         var result;
@@ -87,7 +96,8 @@
         return { valid: true, error: null, schemaVersion: SCHEMA, decision: result.decision,
             decisionSource: result.decisionSource, evidence: clone(result.evidence), reason: result.reason,
             candidateKey: result.candidate && typeof result.candidate.key === "string" ? result.candidate.key : null,
-            filterResults: filters(result.debug), warnings: Array.isArray(bundle.warnings) ? clone(bundle.warnings) : [] };
+            filterResults: filters(result.debug), warnings: Array.isArray(bundle.warnings) ? clone(bundle.warnings) : [],
+            builderStatus: bundle.status };
     }
     return { getSchemaVersion: getSchemaVersion, getVocabulary: getVocabulary,
         evaluateHistoricalLegacy: evaluateHistoricalLegacy };

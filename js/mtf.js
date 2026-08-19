@@ -126,10 +126,11 @@
         };
     }
 
-    function analyzeCandles(source, timeframe) {
+    function analyzeCandles(source, timeframe, evaluationCutoffTime) {
         const normalized = normalizeMTFCandles(source);
         if (!normalized.length) return noDataResult(timeframe);
-        const now = Date.now();
+        const now = Number.isSafeInteger(evaluationCutoffTime) && evaluationCutoffTime > 0
+            ? evaluationCutoffTime : Date.now();
         const closedCandles = normalized.filter((candle, index) =>
             candle.closeTime !== null ? candle.closeTime <= now : index < normalized.length - 1
         );

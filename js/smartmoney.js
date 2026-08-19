@@ -8,16 +8,18 @@ console.log("HNDai SmartMoney v5 Loaded");
 // Swing Detection
 // ==========================
 
-function getSwings(lookback = 3) {
+function getSwings(lookback = 3, sourceCandles) {
+
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
 
     const highs = [];
     const lows = [];
 
-    if (!candles || candles.length < lookback * 2 + 1) {
+    if (!data || data.length < lookback * 2 + 1) {
         return { highs, lows };
     }
 
-    for (let i = lookback; i < candles.length - lookback; i++) {
+    for (let i = lookback; i < data.length - lookback; i++) {
 
         let swingHigh = true;
         let swingLow = true;
@@ -25,15 +27,15 @@ function getSwings(lookback = 3) {
         for (let j = 1; j <= lookback; j++) {
 
             if (
-                candles[i].high <= candles[i - j].high ||
-                candles[i].high <= candles[i + j].high
+                data[i].high <= data[i - j].high ||
+                data[i].high <= data[i + j].high
             ) {
                 swingHigh = false;
             }
 
             if (
-                candles[i].low >= candles[i - j].low ||
-                candles[i].low >= candles[i + j].low
+                data[i].low >= data[i - j].low ||
+                data[i].low >= data[i + j].low
             ) {
                 swingLow = false;
             }
@@ -46,7 +48,7 @@ function getSwings(lookback = 3) {
 
                 index: i,
 
-                price: candles[i].high
+                price: data[i].high
 
             });
 
@@ -58,7 +60,7 @@ function getSwings(lookback = 3) {
 
                 index: i,
 
-                price: candles[i].low
+                price: data[i].low
 
             });
 
@@ -74,9 +76,9 @@ function getSwings(lookback = 3) {
 // Last Swings
 // ==========================
 
-function getLastSwings() {
+function getLastSwings(sourceCandles) {
 
-    const { highs, lows } = getSwings();
+    const { highs, lows } = getSwings(3, sourceCandles);
 
     return {
 
@@ -108,9 +110,9 @@ function getLastSwings() {
 // Market Structure
 // ==========================
 
-function detectMarketStructure() {
+function detectMarketStructure(sourceCandles) {
 
-    const swings = getLastSwings();
+    const swings = getLastSwings(sourceCandles);
 
     if (
 
@@ -218,10 +220,12 @@ function detectTrend() {
 // BOS
 // ==========================
 
-function detectBOS() {
+function detectBOS(sourceCandles) {
+
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
 
     const structure =
-        detectMarketStructure();
+        detectMarketStructure(data);
 
     if (
 
@@ -229,9 +233,9 @@ function detectBOS() {
 
         !structure.lastLow ||
 
-        !candles ||
+        !data ||
 
-       candles.length < 2
+       data.length < 2
 
     ) {
 
@@ -239,8 +243,8 @@ function detectBOS() {
 
     }
 
-const lastClose = candles[candles.length - 1].close;
-const prevClose = candles[candles.length - 2].close;
+const lastClose = data[data.length - 1].close;
+const prevClose = data[data.length - 2].close;
 
 if (
     lastClose > structure.lastHigh.price &&
@@ -264,13 +268,13 @@ return "NO BOS";
 // CHOCH
 // ==========================
 
-function detectCHoCH() {
+function detectCHoCH(sourceCandles) {
 
     const structure =
-        detectMarketStructure();
+        detectMarketStructure(sourceCandles);
 
     const bos =
-        detectBOS();
+        detectBOS(sourceCandles);
 
     if (
 
@@ -304,16 +308,18 @@ function detectCHoCH() {
 // Order Block
 // ==========================
 
-function detectOrderBlock() {
+function detectOrderBlock(sourceCandles) {
 
-    if (!candles || candles.length < 5) {
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+
+    if (!data || data.length < 5) {
         return null;
     }
 
-    for (let i = candles.length - 2; i >= 1; i--) {
+    for (let i = data.length - 2; i >= 1; i--) {
 
-        const candle = candles[i];
-        const next = candles[i + 1];
+        const candle = data[i];
+        const next = data[i + 1];
 
         // Bullish Order Block
         if (
@@ -365,17 +371,19 @@ function detectOrderBlock() {
 // Fair Value Gap
 // ==========================
 
-function detectFVG() {
+function detectFVG(sourceCandles) {
 
-    if (!candles || candles.length < 3) {
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+
+    if (!data || data.length < 3) {
         return null;
     }
 
-    for (let i = candles.length - 2; i >= 1; i--) {
+    for (let i = data.length - 2; i >= 1; i--) {
 
-        const c1 = candles[i - 1];
-        const c2 = candles[i];
-        const c3 = candles[i + 1];
+        const c1 = data[i - 1];
+        const c2 = data[i];
+        const c3 = data[i + 1];
 
         // Bullish FVG
         if (c1.high < c3.low) {
@@ -421,9 +429,11 @@ function detectFVG() {
 // Liquidity
 // ==========================
 
-function detectLiquidity() {
+function detectLiquidity(sourceCandles) {
 
-    const swings = getLastSwings();
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+
+    const swings = getLastSwings(data);
 
     if (
         !swings.lastHigh ||
@@ -435,7 +445,7 @@ function detectLiquidity() {
     }
 
     const price =
-        candles[candles.length - 1].close;
+        data[data.length - 1].close;
 
     if (price > swings.lastHigh.price)
         return "BUY SIDE";
@@ -504,20 +514,22 @@ function detectEqualLevels(tolerance = 0.0015) {
 // Liquidity Sweep v2
 // ==========================
 
-function detectLiquiditySweep() {
+function detectLiquiditySweep(sourceCandles) {
 
-    const swings = getSwings();
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+
+    const swings = getSwings(3, data);
 
     if (
-        !candles ||
-        candles.length < 10 ||
+        !data ||
+        data.length < 10 ||
         swings.highs.length === 0 ||
         swings.lows.length === 0
     ) {
         return null;
     }
 
-    const candle = candles[candles.length - 1];
+    const candle = data[data.length - 1];
 
     // BUY SIDE
     for (const high of swings.highs) {
@@ -574,7 +586,8 @@ function detectLiquiditySweep() {
 // Smart Money Zones v2
 // ==========================
 
-function getSmartMoneyCandleData() {
+function getSmartMoneyCandleData(sourceCandles) {
+    if (Array.isArray(sourceCandles)) return sourceCandles;
     return typeof candles !== "undefined" && Array.isArray(candles)
         ? candles
         : [];
@@ -621,7 +634,7 @@ function applySmartMoneyZoneOptions(zones, options) {
 }
 
 function detectOrderBlocks(options = {}) {
-    const data = getSmartMoneyCandleData();
+    const data = getSmartMoneyCandleData(options.candles);
     const normalizedOptions = getSmartMoneyZoneOptions(options);
     const zones = [];
     const zoneIds = new Set();
@@ -748,7 +761,7 @@ function detectOrderBlocks(options = {}) {
 }
 
 function detectFVGs(options = {}) {
-    const data = getSmartMoneyCandleData();
+    const data = getSmartMoneyCandleData(options.candles);
     const normalizedOptions = getSmartMoneyZoneOptions(options);
     const zones = [];
     const zoneIds = new Set();
@@ -1272,7 +1285,7 @@ function getStructureEventOptions(options = {}) {
 }
 
 function detectStructureEvents(options = {}) {
-    const data = getSmartMoneyCandleData();
+    const data = getSmartMoneyCandleData(options.candles);
     const normalizedOptions = getStructureEventOptions(options);
 
     if (data.length < normalizedOptions.lookback * 2 + 2) {
@@ -1282,7 +1295,7 @@ function detectStructureEvents(options = {}) {
     let swings;
 
     try {
-        swings = getSwings(normalizedOptions.lookback);
+        swings = getSwings(normalizedOptions.lookback, data);
     } catch (error) {
         return [];
     }
@@ -1464,6 +1477,27 @@ function getStructureZoneQualificationOptions(options = {}) {
         minFVGHeightATR: safeThreshold(options.minFVGHeightATR, 0.06),
         requireExternalProgression: options.requireExternalProgression !== false
     };
+}
+
+function getLiveStructureZoneQualificationOptions() {
+    return {
+        maxEvents: 100, orderBlocksPerEvent: 2, fvgsPerEvent: 2,
+        maxQualifiedOrderBlocks: 24, maxQualifiedFVGs: 24,
+        nestedContainmentToleranceATR: 0.05, nearZoneMidpointATR: 0.18,
+        nearZoneOverlapRatio: 0.70, zoneClusterMaxEventBars: 24,
+        invalidatedMinSignificanceScore: 70, invalidatedMinZoneHeightATR: 0.18,
+        mitigatedMinSignificanceScore: 55, mitigatedMinZoneHeightATR: 0.10,
+        includeBOS: true, includeCHoCH: true, requireClosedConfirmation: true,
+        atrPeriod: 14, minLegBars: 4, minLegRangeATR: 1.25,
+        minBreakDistanceATR: 0.10, minConfirmationBodyATR: 0.22,
+        minConfirmationBodyRatio: 0.45, minStructureAdvanceATR: 0.08,
+        minOrderBlockHeightATR: 0.12, minFVGHeightATR: 0.06,
+        requireExternalProgression: true
+    };
+}
+
+function getLiveStructureHistoricalInputOptions() {
+    return { structureLookback: 3, structureHistoryLimit: 100, rawZoneHistoryLimit: 200 };
 }
 
 function isClosedSmartMoneyCandle(candle, index, dataLength, now = Date.now()) {
