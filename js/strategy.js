@@ -64,10 +64,10 @@ function getTrendScore(emaValues = getEMAValues()) {
 // ==========================
 // Structure Score
 // ==========================
-function getStructureScore() {
+function getStructureScore(sourceCandles) {
 
-    const bos = detectBOS();
-    const choch = detectCHoCH();
+    const bos = detectBOS(sourceCandles);
+    const choch = detectCHoCH(sourceCandles);
 
     let bullScore = 0;
     let bearScore = 0;
@@ -119,12 +119,12 @@ function getStructureScore() {
 // Smart Money Score
 // ==========================
 
-function getSMCScore() {
+function getSMCScore(sourceCandles) {
 
-    const orderBlock = detectOrderBlock();
-    const fvg = detectFVG();
-    const liquidity = detectLiquidity();
-    const liquiditySweep = detectLiquiditySweep();
+    const orderBlock = detectOrderBlock(sourceCandles);
+    const fvg = detectFVG(sourceCandles);
+    const liquidity = detectLiquidity(sourceCandles);
+    const liquiditySweep = detectLiquiditySweep(sourceCandles);
 
     let bullScore = 0;
     let bearScore = 0;
@@ -192,13 +192,13 @@ function getSMCScore() {
 }
 
 
-function analyzeMarket() {
+function analyzeMarket(sourceCandles) {
 
-    const { ema20, ema50, ema200 } = getEMAValues();
-    const rsi = calculateRSI();
+    const { ema20, ema50, ema200 } = getEMAValues(sourceCandles);
+    const rsi = calculateRSI(14, sourceCandles);
     const trend = getTrendScore({ ema20, ema50, ema200 });
-    const structure = getStructureScore();
-    const smc = getSMCScore();
+    const structure = getStructureScore(sourceCandles);
+    const smc = getSMCScore(sourceCandles);
 
     const bullScore = trend.bullScore + structure.bullScore + smc.bullScore;
     const bearScore = trend.bearScore + structure.bearScore + smc.bearScore;

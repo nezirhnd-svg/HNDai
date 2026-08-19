@@ -70,7 +70,8 @@
             pendingCandidateResolvedCount: 0, pendingCandidateExpiredCount: 0,
             unmatchedStructureEventCount: 0, legacyDecisionAvailableCount: 0,
             legacyAllowCount: 0, legacyBlockCount: 0, legacyUnavailableCount: 0,
-            gateDecisionAvailableCount: 0, notComparableReasons: {}, byLegacyReason: [],
+            gateDecisionAvailableCount: 0, builderReadyCount: 0, builderUnavailableCount: 0,
+            notComparableReasons: {}, byLegacyReason: [], byBuilderStatus: [],
             matchRate: null, mismatchRate: null, observations: [], warnings: [], disclaimer: DISCLAIMER };
     }
     function classify(value) {
@@ -123,6 +124,14 @@
                     output._legacyReasonCounts[reason] = (output._legacyReasonCounts[reason] || 0) + result.legacyReasonCounts[reason];
                 });
             }
+            if (result && result.builderStatusCounts && typeof result.builderStatusCounts === "object") {
+                Object.keys(result.builderStatusCounts).forEach(function (status) {
+                    if (!output._builderStatusCounts) output._builderStatusCounts = {};
+                    output._builderStatusCounts[status] = (output._builderStatusCounts[status] || 0) + result.builderStatusCounts[status];
+                    if (status === "INPUT_READY") output.builderReadyCount += result.builderStatusCounts[status];
+                    else output.builderUnavailableCount += result.builderStatusCounts[status];
+                });
+            }
             if (index < cfg.warmupCandles) continue;
             var values = result && Array.isArray(result.comparisons) && result.comparisons.length ? result.comparisons : [result];
             output.evaluatedCandleCount += 1;
@@ -149,6 +158,7 @@
                 legacyDecisionSource: value && typeof value.legacyDecisionSource === "string" ? value.legacyDecisionSource : null,
                 gateDecisionSource: value && typeof value.gateDecisionSource === "string" ? value.gateDecisionSource : null,
                 legacyDecisionEvidence: value && value.legacyDecisionEvidence && typeof value.legacyDecisionEvidence === "object" ? clone(value.legacyDecisionEvidence) : null };
+            observation.builderStatus = value && typeof value.builderStatus === "string" ? value.builderStatus : null;
             if (category === "MATCH") { output.matchCount += 1; output.comparableCount += 1; }
             else if (category === "MISMATCH") { output.mismatchCount += 1; output.comparableCount += 1; }
             else if (category === "FAILURE") output.failureCount += 1;
@@ -166,6 +176,10 @@
             return { key: key, count: output._legacyReasonCounts[key] };
         }).sort(function (a, b) { return b.count - a.count || a.key.localeCompare(b.key); });
         delete output._legacyReasonCounts;
+        output.byBuilderStatus = Object.keys(output._builderStatusCounts || {}).map(function (key) {
+            return { key: key, count: output._builderStatusCounts[key] };
+        }).sort(function (a, b) { return b.count - a.count || a.key.localeCompare(b.key); });
+        delete output._builderStatusCounts;
         output.matchRate = output.comparableCount ? Math.round(output.matchCount / output.comparableCount * 10000) / 100 : null;
         output.mismatchRate = output.comparableCount ? Math.round(output.mismatchCount / output.comparableCount * 10000) / 100 : null;
         if (output.duplicateCandidateCount) output.warnings.push("DUPLICATE_CANDIDATES_SKIPPED:" + output.duplicateCandidateCount);
@@ -183,6 +197,7 @@
             "pendingCandidateResolvedCount", "pendingCandidateExpiredCount", "unmatchedStructureEventCount",
             "legacyDecisionAvailableCount", "gateDecisionAvailableCount", "notComparableReasons",
             "legacyAllowCount", "legacyBlockCount", "legacyUnavailableCount", "byLegacyReason",
+            "builderReadyCount", "builderUnavailableCount", "byBuilderStatus",
             "matchRate", "mismatchRate", "evaluationCutoffTime", "warnings", "disclaimer"];
         var safe = {};
         fields.forEach(function (field) { safe[field] = clone(result[field]); });
@@ -195,7 +210,8 @@
                 legacyDecision: observation.legacyDecision, gateDecision: observation.gateDecision,
                 legacyDecisionSource: observation.legacyDecisionSource,
                 gateDecisionSource: observation.gateDecisionSource,
-                legacyDecisionEvidence: clone(observation.legacyDecisionEvidence) };
+                legacyDecisionEvidence: clone(observation.legacyDecisionEvidence),
+                builderStatus: observation.builderStatus };
         }) : [];
         return JSON.stringify(safe, null, 2);
     }

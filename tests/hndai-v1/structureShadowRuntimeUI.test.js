@@ -38,7 +38,10 @@ function loadRuntime() {
         console: { log() {}, warn() {}, error() {} },
         setInterval() { return 1; }, clearInterval() {},
         fetchCandles: async () => [], fetchPrice: async () => 1,
-        analyzeMarket: () => ({ signal: "WAIT" })
+        analyzeMarket: () => ({ signal: "WAIT" }),
+        getLiveStructureZoneQualificationOptions: () => ({}),
+        getLiveStructureHistoricalInputOptions: () => ({ structureLookback: 3,
+            structureHistoryLimit: 100, rawZoneHistoryLimit: 200 })
     };
     vm.runInNewContext(scriptCode, context);
     return { api: context.window.HNDStructureShadowRuntimeTestAPI,

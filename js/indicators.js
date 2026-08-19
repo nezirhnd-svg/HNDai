@@ -30,16 +30,18 @@ function calculateEMA(period, data) {
 }
 
 // RSI Hesaplama
-function calculateRSI(period = 14) {
+function calculateRSI(period = 14, sourceCandles) {
 
-    if (candles.length < period + 1) return 50;
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+
+    if (data.length < period + 1) return 50;
 
     let gains = 0;
     let losses = 0;
 
-    for (let i = candles.length - period; i < candles.length; i++) {
+    for (let i = data.length - period; i < data.length; i++) {
 
-        const diff = candles[i].close - candles[i - 1].close;
+        const diff = data[i].close - data[i - 1].close;
 
         if (diff >= 0)
             gains += diff;
@@ -57,9 +59,10 @@ function calculateRSI(period = 14) {
 }
 
 // EMA değerlerini döndür
-function getEMAValues() {
+function getEMAValues(sourceCandles) {
 
-    const closes = candles.map(c => c.close);
+    const data = Array.isArray(sourceCandles) ? sourceCandles : candles;
+    const closes = data.map(c => c.close);
 
     return {
 
