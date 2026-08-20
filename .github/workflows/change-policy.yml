@@ -1,0 +1,51 @@
+name: HNDai Change Policy
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hndai-change-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  change-policy:
+    name: change-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+      - name: Classify changed files (reporting only)
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+          node scripts/ci/classify-change.mjs --base "$BASE_SHA" --head "$HEAD_SHA" 2>&1 | tee "$RUNNER_TEMP/change-policy.log"
+      - name: Publish policy summary
+        if: always()
+        env:
+          CLASSIFICATION: ${{ steps.classify.outputs.classification }}
+          MERGE_ELIGIBLE: ${{ steps.classify.outputs.merge_eligible }}
+        run: |
+          echo '### Change policy (reporting only)' >> "$GITHUB_STEP_SUMMARY"
+          echo "Classification: \`${CLASSIFICATION:-UNAVAILABLE}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Merge eligible in this phase: \`${MERGE_ELIGIBLE:-false}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo 'This workflow never enables or starts merge.' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/change-policy.log" 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo 'Classifier log unavailable (fail closed).' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

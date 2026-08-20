@@ -1,0 +1,201 @@
+name: HNDai CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hndai-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HND_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+  HND_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  targeted-tests:
+    name: targeted-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run targeted tests
+        run: |
+          set -o pipefail
+          npm run test:targeted -- --base "$HND_BASE_SHA" --head "$HND_HEAD_SHA" 2>&1 | tee "$RUNNER_TEMP/targeted-tests.log"
+      - name: Add targeted summary
+        if: always()
+        run: |
+          echo '### Targeted tests' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 80 "$RUNNER_TEMP/targeted-tests.log" 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo 'Targeted test log unavailable (fail closed).' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload targeted test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: targeted-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/targeted-tests.log
+          if-no-files-found: error
+          retention-days: 14
+
+  full-regression:
+    name: full-regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run full regression
+        run: |
+          set -o pipefail
+          npm run test:full 2>&1 | tee "$RUNNER_TEMP/full-regression.log"
+      - name: Add regression summary
+        if: always()
+        run: |
+          echo '### Full regression' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 80 "$RUNNER_TEMP/full-regression.log" 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo 'Regression log unavailable (fail closed).' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload regression log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: full-regression-${{ github.sha }}
+          path: ${{ runner.temp }}/full-regression.log
+          if-no-files-found: error
+          retention-days: 14
+
+  browser-integration:
+    name: browser-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run localhost browser integration
+        run: |
+          set -o pipefail
+          npm run test:browser 2>&1 | tee "$RUNNER_TEMP/browser-integration.log"
+      - name: Add browser summary
+        if: always()
+        run: |
+          echo '### Localhost HTTP + Playwright Chromium' >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/browser-integration.log" 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo 'Browser log unavailable (fail closed).' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload browser log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-integration-${{ github.sha }}
+          path: ${{ runner.temp }}/browser-integration.log
+          if-no-files-found: error
+          retention-days: 14
+
+  production-js-syntax:
+    name: production-js-syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Check production JavaScript syntax
+        run: npm run check:syntax
+
+  whitespace:
+    name: whitespace
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+      - name: Check diff and whitespace
+        run: node scripts/ci/check-whitespace.mjs --base "$HND_BASE_SHA" --head "$HND_HEAD_SHA"
+
+  ci-required:
+    name: ci-required
+    if: always()
+    needs: [targeted-tests, full-regression, browser-integration, production-js-syntax, whitespace]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          TARGETED: ${{ needs.targeted-tests.result }}
+          FULL: ${{ needs.full-regression.result }}
+          BROWSER: ${{ needs.browser-integration.result }}
+          SYNTAX: ${{ needs.production-js-syntax.result }}
+          WHITESPACE: ${{ needs.whitespace.result }}
+        run: |
+          printf 'targeted=%s\nfull=%s\nbrowser=%s\nsyntax=%s\nwhitespace=%s\n' "$TARGETED" "$FULL" "$BROWSER" "$SYNTAX" "$WHITESPACE"
+          test "$TARGETED" = success
+          test "$FULL" = success
+          test "$BROWSER" = success
+          test "$SYNTAX" = success
+          test "$WHITESPACE" = success
