@@ -581,6 +581,24 @@ TradeAI Pro
 <tbody id="historicalOutcomeReviewBody"><tr><td colspan="8">No historical outcome analysis</td></tr></tbody></table></div>
 <p class="structure-shadow-safety">Retrospective historical diagnostic only; outcomes do not change rules, count toward live readiness, authorize entries, or guarantee profitability.</p>
 </div>
+<div id="historicalRrCapReview" class="structure-paper-readiness historical-rr-cap-review rr-cap-not-analyzed">
+<h3>HISTORICAL RR CAP SCENARIOS</h3>
+<div class="structure-shadow-grid">
+<p>Status</p><strong id="historicalRrCapStatus">NOT ANALYZED</strong>
+<p>Live Readiness Contribution</p><strong id="historicalRrCapReadiness">NONE</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="analyzeHistoricalRrCapScenarios" type="button">Analyze RR Cap Scenarios</button>
+<button id="exportHistoricalRrCapScenarios" type="button">Export RR Cap Scenario JSON</button>
+</div>
+<p id="historicalRrCapWarning" class="structure-shadow-warning" aria-live="polite"></p>
+<p class="historical-rr-cap-safety">DIAGNOSTIC SCENARIO ONLY — DOES NOT CHANGE LIVE TP</p>
+<div class="historical-rr-cap-table-wrap"><table><thead><tr><th>Scenario</th><th>Evaluable</th><th>Not Evaluable</th><th>TP First</th><th>SL First</th><th>Ambiguous</th><th>Entry Not Reached</th><th>Open</th><th>Insufficient</th><th>Max R</th></tr></thead>
+<tbody id="historicalRrCapSummaryBody"><tr><td colspan="10">No RR cap scenario analysis</td></tr></tbody></table></div>
+<div class="historical-rr-cap-table-wrap"><table><thead><tr><th>Market</th><th>TF</th><th>Scenario</th><th>Direction</th><th>Entry</th><th>Stop</th><th>Original TP</th><th>Scenario TP</th><th>Capped</th><th>Outcome</th></tr></thead>
+<tbody id="historicalRrCapDetailBody"><tr><td colspan="10">No RR cap scenario items</td></tr></tbody></table></div>
+<p class="structure-shadow-safety">Retrospective comparison only; nine examples do not support a live RR policy recommendation or profitability claim.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -716,6 +734,7 @@ TradeAI Pro
 <script src="js/hndai-v1/structureHistoricalShadowReplay.js"></script>
 <script src="js/hndai-v1/structureHistoricalMismatchAnalyzer.js"></script>
 <script src="js/hndai-v1/structureHistoricalMismatchOutcomeAnalyzer.js"></script>
+<script src="js/hndai-v1/structureHistoricalRrCapScenarioAnalyzer.js"></script>
 <script src="js/ui.js?v=6"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/hndai-v1/structureHistoricalPlanEvidence.js"></script>

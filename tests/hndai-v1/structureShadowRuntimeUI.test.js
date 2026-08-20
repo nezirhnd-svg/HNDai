@@ -91,10 +91,15 @@ function loadHistoricalMismatchUI(options = {}) {
         "historicalOutcomeAmbiguous", "historicalOutcomeEntryNotReached", "historicalOutcomeOpen",
         "historicalOutcomeInsufficient", "historicalOutcomeWarning", "historicalOutcomeReview",
         "historicalOutcomeReviewBody"].forEach(id => { elements[id] = element(id); });
+    ["historicalRrCapStatus", "historicalRrCapReadiness", "historicalRrCapWarning",
+        "historicalRrCapReview", "historicalRrCapSummaryBody", "historicalRrCapDetailBody"]
+        .forEach(id => { elements[id] = element(id); });
     if (options.analyze !== false) elements.analyzeHistoricalMismatch = element("analyzeHistoricalMismatch");
     if (options.export !== false) elements.exportHistoricalMismatchAnalysis = element("exportHistoricalMismatchAnalysis");
     if (options.outcomeAnalyze !== false) elements.analyzeHistoricalMismatchOutcomes = element("analyzeHistoricalMismatchOutcomes");
     if (options.outcomeExport !== false) elements.exportHistoricalMismatchOutcomes = element("exportHistoricalMismatchOutcomes");
+    if (options.rrCapAnalyze !== false) elements.analyzeHistoricalRrCapScenarios = element("analyzeHistoricalRrCapScenarios");
+    if (options.rrCapExport !== false) elements.exportHistoricalRrCapScenarios = element("exportHistoricalRrCapScenarios");
     const document = { readyState: options.readyState || "complete", body: element("body"),
         getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
     const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
@@ -105,19 +110,30 @@ function loadHistoricalMismatchUI(options = {}) {
     const outcome = { valid: true, status: "NO_EVALUABLE_ITEMS", analyzedMismatchCount: 1, evaluableCount: 0,
         notEvaluableCount: 1, tpFirstCount: 0, slFirstCount: 0, ambiguousCount: 0, entryNotReachedCount: 0,
         openAtHorizonCount: 0, insufficientFutureDataCount: 0, outcomeItems: [] };
+    const rrCap = { valid: true, status: "SCENARIOS_AVAILABLE", countsTowardLiveReadiness: false,
+        scenarioSummaries: [{ scenario: "MAX_2R", maxR: 2, evaluableCount: 1, notEvaluableCount: 0,
+            tpFirstCount: 1, slFirstCount: 0, ambiguousCount: 0, entryNotReachedCount: 0,
+            openAtHorizonCount: 0, insufficientFutureDataCount: 0 }],
+        scenarioItems: [{ symbol: "BTCUSDT", interval: "4h", scenario: "MAX_2R", direction: "LONG",
+            entryPrice: 100, stopLoss: 90, originalTakeProfit: 150, scenarioTakeProfit: 120,
+            wasCapped: true, scenarioOutcome: "TP_FIRST" }] };
     const context = { document, window: { HNDStructureHistoricalMismatchAnalyzer: {
             analyzeReplay() { return clone(analysis); }, exportAnalysis() { return "{}"; } } }, activeTrade: null,
         console: { log() {}, warn() {}, error() {} }, Blob: function () {},
         URL: { createObjectURL() { return "blob:test"; }, revokeObjectURL() {} }, Date };
     if (options.outcomeDependency !== false) context.window.HNDStructureHistoricalMismatchOutcomeAnalyzer = {
         analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } };
+    if (options.rrCapDependency !== false) context.window.HNDStructureHistoricalRrCapScenarioAnalyzer = {
+        analyzeScenarios() { return clone(rrCap); }, exportScenarioAnalysis() { return "{}"; } };
     vm.runInNewContext(uiCode, context);
     return { context, elements, listenerCount(id) { return (listeners.get(`${id}:click`) || []).length; },
         setReplay(value) { vm.runInNewContext(`lastStructureHistoricalShadowReplay = ${JSON.stringify(value)}`, context); },
         setOutcomeInputs() { vm.runInNewContext(`lastStructureHistoricalShadowReplay = ${JSON.stringify({schemaVersion:"HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1"})}; lastStructureHistoricalMismatchAnalysis = ${JSON.stringify(analysis)}; lastStructureHistoricalShadowReplayCandles = [];`, context); },
         installOutcomeDependency() { context.window.HNDStructureHistoricalMismatchOutcomeAnalyzer = {
             analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } }; },
-        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls();", context); } };
+        installRrCapDependency() { context.window.HNDStructureHistoricalRrCapScenarioAnalyzer = {
+            analyzeScenarios() { return clone(rrCap); }, exportScenarioAnalysis() { return "{}"; } }; },
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls();", context); } };
 }
 
 function candles() {
@@ -354,6 +370,58 @@ test("historical outcome analyze binds without export button", () => {
     const fixture = loadHistoricalMismatchUI({ outcomeExport: false }); fixture.setOutcomeInputs();
     assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatchOutcomes"), 1);
     assert.doesNotThrow(() => fixture.elements.analyzeHistoricalMismatchOutcomes.click());
+});
+
+test("historical RR cap buttons bind exactly one listener", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setup(); fixture.setup();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalRrCapScenarios"), 1);
+    assert.strictEqual(fixture.listenerCount("exportHistoricalRrCapScenarios"), 1);
+});
+
+test("historical RR cap uses exact real HTML IDs and safety text", () => {
+    assert.match(html, /id="analyzeHistoricalRrCapScenarios"/);
+    assert.match(html, /id="exportHistoricalRrCapScenarios"/);
+    assert.match(html, /DIAGNOSTIC SCENARIO ONLY — DOES NOT CHANGE LIVE TP/);
+    assert.match(uiCode, /getElementById\("analyzeHistoricalRrCapScenarios"\)/);
+    assert.match(uiCode, /getElementById\("exportHistoricalRrCapScenarios"\)/);
+});
+
+test("historical RR cap binds immediately while DOM reports loading", () => {
+    const fixture = loadHistoricalMismatchUI({ readyState: "loading" });
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalRrCapScenarios"), 1);
+    assert.strictEqual(fixture.listenerCount("exportHistoricalRrCapScenarios"), 1);
+});
+
+test("historical RR cap analyze updates summary and detail UI", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setOutcomeInputs();
+    fixture.elements.analyzeHistoricalRrCapScenarios.click();
+    assert.strictEqual(fixture.elements.historicalRrCapStatus.textContent, "SCENARIOS AVAILABLE");
+    assert.strictEqual(fixture.elements.historicalRrCapReadiness.textContent, "NONE");
+    assert.strictEqual(fixture.elements.historicalRrCapSummaryBody.children.length, 1);
+    assert.strictEqual(fixture.elements.historicalRrCapDetailBody.children.length, 1);
+});
+
+test("historical RR cap dependency may load after listener setup", () => {
+    const fixture = loadHistoricalMismatchUI({ rrCapDependency: false }); fixture.setOutcomeInputs();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalRrCapScenarios"), 1);
+    fixture.installRrCapDependency(); fixture.elements.analyzeHistoricalRrCapScenarios.click();
+    assert.strictEqual(fixture.elements.historicalRrCapStatus.textContent, "SCENARIOS AVAILABLE");
+});
+
+test("historical RR cap export binds without analyze button", () => {
+    const fixture = loadHistoricalMismatchUI({ rrCapAnalyze: false });
+    assert.strictEqual(fixture.listenerCount("exportHistoricalRrCapScenarios"), 1);
+    assert.doesNotThrow(() => fixture.elements.exportHistoricalRrCapScenarios.click());
+});
+
+test("historical RR cap analyze binds without export button", () => {
+    const fixture = loadHistoricalMismatchUI({ rrCapExport: false }); fixture.setOutcomeInputs();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalRrCapScenarios"), 1);
+    assert.doesNotThrow(() => fixture.elements.analyzeHistoricalRrCapScenarios.click());
+});
+
+test("historical RR cap export filename is deterministic", () => {
+    assert.match(uiCode, /HNDai-historical-rr-cap-scenarios-/);
 });
 
 let passed = 0;
