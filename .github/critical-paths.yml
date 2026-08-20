@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "criticalStatuses": ["D", "R", "C", "T", "U", "X", "B"],
+  "critical": [
+    ".github/**",
+    "AGENTS.md",
+    "package.json",
+    "package-lock.json",
+    "scripts/ci/**",
+    "docs/automation-runbook.md",
+    "js/api.js",
+    "js/tradeEngine.js",
+    "js/tradePlanEngine.js",
+    "js/hndai-v1/structurePaperTrialReadinessGate.js",
+    "js/**/*risk*.js",
+    "js/**/*Risk*.js",
+    "js/**/*secret*.js",
+    "js/**/*Secret*.js",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.p12",
+    "**/*.pfx",
+    ".env",
+    ".env.*"
+  ],
+  "safeCandidates": [
+    "index.html",
+    "style.css",
+    "js/ui.js",
+    "js/hndai-v1/structureHistorical*.js",
+    "js/hndai-v1/structureShadow*.js",
+    "tests/**",
+    "docs/diagnostics/**"
+  ]
+}

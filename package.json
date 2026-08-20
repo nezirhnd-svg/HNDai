@@ -1,0 +1,22 @@
+{
+  "name": "hndai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic local and CI verification for HNDai",
+  "scripts": {
+    "test:targeted": "node scripts/ci/run-tests.mjs --mode targeted",
+    "test:full": "node scripts/ci/run-tests.mjs --mode full",
+    "test:browser": "node scripts/ci/run-tests.mjs --mode browser",
+    "check:syntax": "node scripts/ci/check-production-syntax.mjs",
+    "check:whitespace": "node scripts/ci/check-whitespace.mjs",
+    "check:classify": "node scripts/ci/classify-change.mjs",
+    "ci": "npm run test:targeted && npm run test:full && npm run test:browser && npm run check:syntax && npm run check:whitespace"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "yaml": "2.8.1"
+  }
+}
