@@ -23,6 +23,9 @@ let lastStructureHistoricalMismatchAnalysis = null;
 let structureHistoricalOutcomeAnalyzeButton = null;
 let structureHistoricalOutcomeExportButton = null;
 let lastStructureHistoricalOutcomeAnalysis = null;
+let structureHistoricalRrCapAnalyzeButton = null;
+let structureHistoricalRrCapExportButton = null;
+let lastStructureHistoricalRrCapScenarioAnalysis = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -743,12 +746,14 @@ async function runStructureHistoricalShadowReplay() {
         lastStructureHistoricalShadowReplayCandles = JSON.parse(JSON.stringify(closed));
         lastStructureHistoricalMismatchAnalysis = null;
         lastStructureHistoricalOutcomeAnalysis = null;
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
         updateStructureHistoricalShadowReplayUI(result);
     } catch (error) {
         lastStructureHistoricalShadowReplay = null;
         lastStructureHistoricalShadowReplayCandles = null;
         lastStructureHistoricalMismatchAnalysis = null;
         lastStructureHistoricalOutcomeAnalysis = null;
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
         updateStructureHistoricalShadowReplayUI({ status: "DEPENDENCY_FAILURE", source: "HISTORICAL_REPLAY",
             symbol: document.getElementById("historicalShadowReplaySymbol")?.value || null,
             interval: document.getElementById("historicalShadowReplayInterval")?.value || null });
@@ -814,10 +819,12 @@ function updateStructureHistoricalMismatchUI(result = null, warning = "") {
 function analyzeStructureHistoricalReplay() {
     if (!lastStructureHistoricalShadowReplay) {
         lastStructureHistoricalMismatchAnalysis = null;
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
         updateStructureHistoricalMismatchUI(null, "Run Historical Replay before analysis.");
         return;
     }
     try {
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
         const replayBefore = JSON.stringify(lastStructureHistoricalShadowReplay);
         const result = window.HNDStructureHistoricalMismatchAnalyzer?.analyzeReplay?.(lastStructureHistoricalShadowReplay);
         if (!result || JSON.stringify(lastStructureHistoricalShadowReplay) !== replayBefore) throw new Error("ANALYZER_MUTATED_REPLAY");
@@ -825,6 +832,7 @@ function analyzeStructureHistoricalReplay() {
         updateStructureHistoricalMismatchUI(result);
     } catch (error) {
         lastStructureHistoricalMismatchAnalysis = null;
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
         updateStructureHistoricalMismatchUI({ status: "INVALID_REPLAY" }, "Historical analysis could not be completed.");
     }
 }
@@ -942,6 +950,107 @@ function setupStructureHistoricalOutcomeControls() {
 setupStructureHistoricalOutcomeControls();
 if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", setupStructureHistoricalOutcomeControls, { once: true });
+
+function updateStructureHistoricalRrCapUI(result = null, warning = "") {
+    const value = result || {}, status = value.status || "NOT_ANALYZED";
+    setText("historicalRrCapStatus", String(status).replaceAll("_", " "));
+    setText("historicalRrCapReadiness", "NONE");
+    setText("historicalRrCapWarning", warning);
+    const section = document.getElementById("historicalRrCapReview");
+    section?.classList?.forEach?.(name => { if (name.startsWith("rr-cap-")) section.classList.remove(name); });
+    section?.classList?.add(`rr-cap-${status.toLowerCase().replaceAll("_", "-")}`);
+    const summaryBody = document.getElementById("historicalRrCapSummaryBody");
+    if (summaryBody) {
+        summaryBody.replaceChildren();
+        const summaries = Array.isArray(value.scenarioSummaries) ? value.scenarioSummaries : [];
+        if (!summaries.length) {
+            const row = document.createElement("tr"), column = document.createElement("td");
+            column.colSpan = 10; column.textContent = "No RR cap scenario analysis";
+            row.appendChild(column); summaryBody.appendChild(row);
+        } else summaries.forEach(item => {
+            const row = document.createElement("tr");
+            [item.scenario, item.evaluableCount, item.notEvaluableCount, item.tpFirstCount,
+                item.slFirstCount, item.ambiguousCount, item.entryNotReachedCount,
+                item.openAtHorizonCount, item.insufficientFutureDataCount, item.maxR ?? "ORIGINAL"]
+                .forEach(content => { const column = document.createElement("td");
+                    column.textContent = String(content); row.appendChild(column); });
+            summaryBody.appendChild(row);
+        });
+    }
+    const detailBody = document.getElementById("historicalRrCapDetailBody");
+    if (!detailBody) return;
+    detailBody.replaceChildren();
+    const items = Array.isArray(value.scenarioItems) ? value.scenarioItems.slice(0, 250) : [];
+    if (!items.length) {
+        const row = document.createElement("tr"), column = document.createElement("td");
+        column.colSpan = 10; column.textContent = "No RR cap scenario items";
+        row.appendChild(column); detailBody.appendChild(row); return;
+    }
+    items.forEach(item => {
+        const row = document.createElement("tr");
+        [item.symbol, item.interval, item.scenario, item.direction || "-", formatMarketPrice(item.entryPrice),
+            formatMarketPrice(item.stopLoss), formatMarketPrice(item.originalTakeProfit),
+            formatMarketPrice(item.scenarioTakeProfit), item.wasCapped ? "YES" : "NO", item.scenarioOutcome]
+            .forEach(content => { const column = document.createElement("td");
+                column.textContent = String(content); row.appendChild(column); });
+        detailBody.appendChild(row);
+    });
+}
+
+function analyzeStructureHistoricalRrCapScenarios() {
+    if (!lastStructureHistoricalShadowReplay || !lastStructureHistoricalMismatchAnalysis ||
+        !lastStructureHistoricalShadowReplayCandles) {
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
+        updateStructureHistoricalRrCapUI(null, "Run Historical Replay and Historical Mismatch Analysis first."); return;
+    }
+    try {
+        const before = JSON.stringify([lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles]);
+        const result = window.HNDStructureHistoricalRrCapScenarioAnalyzer?.analyzeScenarios?.(
+            lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles);
+        if (!result || JSON.stringify([lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles]) !== before) throw new Error("RR_CAP_ANALYZER_MUTATED_INPUT");
+        lastStructureHistoricalRrCapScenarioAnalysis = JSON.parse(JSON.stringify(result));
+        updateStructureHistoricalRrCapUI(result);
+    } catch (error) {
+        lastStructureHistoricalRrCapScenarioAnalysis = null;
+        updateStructureHistoricalRrCapUI({ status: "DEPENDENCY_FAILURE" },
+            "Historical RR cap scenario analysis could not be completed.");
+    }
+}
+
+function downloadStructureHistoricalRrCapScenarios() {
+    if (!lastStructureHistoricalRrCapScenarioAnalysis) {
+        setText("historicalRrCapWarning", "Analyze RR Cap Scenarios before export."); return;
+    }
+    try {
+        const json = window.HNDStructureHistoricalRrCapScenarioAnalyzer?.exportScenarioAnalysis?.(
+            lastStructureHistoricalRrCapScenarioAnalysis);
+        if (typeof json !== "string") throw new Error("INVALID_RR_CAP_EXPORT");
+        const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-historical-rr-cap-scenarios-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { setText("historicalRrCapWarning", "Historical RR cap scenario export could not be created."); }
+}
+
+function setupStructureHistoricalRrCapControls() {
+    const analyzeButton = document.getElementById("analyzeHistoricalRrCapScenarios");
+    const exportButton = document.getElementById("exportHistoricalRrCapScenarios");
+    if (analyzeButton && analyzeButton !== structureHistoricalRrCapAnalyzeButton) {
+        analyzeButton.addEventListener("click", analyzeStructureHistoricalRrCapScenarios);
+        structureHistoricalRrCapAnalyzeButton = analyzeButton;
+    }
+    if (exportButton && exportButton !== structureHistoricalRrCapExportButton) {
+        exportButton.addEventListener("click", downloadStructureHistoricalRrCapScenarios);
+        structureHistoricalRrCapExportButton = exportButton;
+    }
+}
+
+setupStructureHistoricalRrCapControls();
+if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", setupStructureHistoricalRrCapControls, { once: true });
 
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
@@ -1126,6 +1235,7 @@ function updateUI(
     setupStructureHistoricalShadowReplayControls();
     setupStructureHistoricalMismatchControls();
     setupStructureHistoricalOutcomeControls();
+    setupStructureHistoricalRrCapControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -1172,3 +1282,4 @@ setupStructurePaperTrialReadinessControls();
 setupStructureHistoricalShadowReplayControls();
 setupStructureHistoricalMismatchControls();
 setupStructureHistoricalOutcomeControls();
+setupStructureHistoricalRrCapControls();
