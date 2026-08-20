@@ -160,7 +160,12 @@
                 legacyDecisionSource: value && typeof value.legacyDecisionSource === "string" ? value.legacyDecisionSource : null,
                 gateDecisionSource: value && typeof value.gateDecisionSource === "string" ? value.gateDecisionSource : null,
                 legacyDecisionEvidence: value && value.legacyDecisionEvidence && typeof value.legacyDecisionEvidence === "object" ? clone(value.legacyDecisionEvidence) : null,
-                gateDecisionEvidence: value && value.gateDecisionEvidence && typeof value.gateDecisionEvidence === "object" ? clone(value.gateDecisionEvidence) : null };
+                gateDecisionEvidence: value && value.gateDecisionEvidence && typeof value.gateDecisionEvidence === "object" ? clone(value.gateDecisionEvidence) : null,
+                legacyPlanEvidence: value && value.legacyPlanEvidence && typeof value.legacyPlanEvidence === "object"
+                    ? { direction: value.legacyPlanEvidence.direction, entryMode: value.legacyPlanEvidence.entryMode,
+                        entryPrice: value.legacyPlanEvidence.entryPrice, entryLow: value.legacyPlanEvidence.entryLow,
+                        entryHigh: value.legacyPlanEvidence.entryHigh, stopLoss: value.legacyPlanEvidence.stopLoss,
+                        takeProfit: value.legacyPlanEvidence.takeProfit } : null };
             observation.builderStatus = value && typeof value.builderStatus === "string" ? value.builderStatus : null;
             if (category === "MATCH") { output.matchCount += 1; output.comparableCount += 1; }
             else if (category === "MISMATCH") { output.mismatchCount += 1; output.comparableCount += 1; }
@@ -216,6 +221,7 @@
                 gateDecisionSource: observation.gateDecisionSource,
                 legacyDecisionEvidence: clone(observation.legacyDecisionEvidence),
                 gateDecisionEvidence: clone(observation.gateDecisionEvidence),
+                legacyPlanEvidence: clone(observation.legacyPlanEvidence),
                 builderStatus: observation.builderStatus };
         }) : [];
         return JSON.stringify(safe, null, 2);
