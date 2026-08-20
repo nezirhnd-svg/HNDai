@@ -149,7 +149,8 @@
                     : legacy.decision === "ALLOW" ? "LEGACY_ALLOW_GATE_BLOCK" : "LEGACY_BLOCK_GATE_ALLOW";
                 comparisons.push({ valid: true, error: null, comparison: comparison,
                     legacyDecision: legacy.decision, gateDecision: gate, candidateKey: resolved.key,
-                    reason: "VERIFIED_DUAL_DECISION", legacyDecisionSource: legacy.decisionSource,
+                    reason: "VERIFIED_DUAL_DECISION", legacyReason: legacy.reason,
+                    gateReason: gateEvidence.reason, legacyDecisionSource: legacy.decisionSource,
                     gateDecisionSource: "HND_STRUCTURE_SETUP_ADAPTER_V1",
                     legacyDecisionEvidence: clone(legacy.evidence), gateDecisionEvidence: gateEvidence,
                     builderStatus: legacy.builderStatus || null });

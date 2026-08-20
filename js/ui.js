@@ -16,6 +16,9 @@ let structurePaperTrialReadinessControlsInitialized = false;
 let lastStructurePaperTrialReadiness = null;
 let structureHistoricalShadowReplayControlsInitialized = false;
 let lastStructureHistoricalShadowReplay = null;
+let structureHistoricalMismatchAnalyzeButton = null;
+let structureHistoricalMismatchExportButton = null;
+let lastStructureHistoricalMismatchAnalysis = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -764,6 +767,90 @@ function setupStructureHistoricalShadowReplayControls() {
     structureHistoricalShadowReplayControlsInitialized = true;
 }
 
+function updateStructureHistoricalMismatchUI(result = null, warning = "") {
+    const value = result || {};
+    const status = value.status || "NOT_ANALYZED";
+    setText("historicalMismatchAnalyzerStatus", String(status).replaceAll("_", " "));
+    [["historicalMismatchObservations", "observationCount"], ["historicalMismatchComparable", "comparableCount"],
+        ["historicalMismatchMatches", "matchCount"], ["historicalMismatchMismatches", "mismatchCount"],
+        ["historicalMismatchFailures", "failureCount"], ["historicalMismatchNotComparable", "notComparableCount"]]
+        .forEach(pair => setText(pair[0], Number.isSafeInteger(value[pair[1]]) ? value[pair[1]] : 0));
+    setText("historicalMismatchMatchRate", Number.isFinite(value.matchRate) ? `${value.matchRate.toFixed(2)}%` : "-");
+    setText("historicalMismatchMismatchRate", Number.isFinite(value.mismatchRate) ? `${value.mismatchRate.toFixed(2)}%` : "-");
+    setText("historicalMismatchWarning", warning);
+    const section = document.getElementById("historicalMismatchReview");
+    section?.classList?.remove("analyzer-not-analyzed", "analyzer-invalid-replay", "analyzer-no-observations",
+        "analyzer-no-comparable", "analyzer-match-only", "analyzer-review-items-found", "analyzer-failures-found");
+    section?.classList?.add(`analyzer-${status.toLowerCase().replaceAll("_", "-")}`);
+    const body = document.getElementById("historicalMismatchReviewBody");
+    if (!body) return;
+    body.replaceChildren();
+    const items = Array.isArray(value.reviewItems) ? value.reviewItems.slice(0, 100) : [];
+    if (!items.length) {
+        const row = document.createElement("tr"), column = document.createElement("td");
+        column.colSpan = 10; column.textContent = "No historical review items"; row.appendChild(column); body.appendChild(row);
+        return;
+    }
+    items.forEach(item => {
+        const row = document.createElement("tr");
+        row.classList.add(`priority-${String(item.priority || "INFO").toLowerCase()}`);
+        [item.priority, item.symbol, item.interval, item.category, item.legacyDecision || "-", item.gateDecision || "-",
+            item.legacyReason || "-", item.gateReason || "-", item.builderStatus || "-", item.suggestedReview || "-"]
+            .forEach(content => { const column = document.createElement("td"); column.textContent = String(content); row.appendChild(column); });
+        body.appendChild(row);
+    });
+}
+
+function analyzeStructureHistoricalReplay() {
+    if (!lastStructureHistoricalShadowReplay) {
+        lastStructureHistoricalMismatchAnalysis = null;
+        updateStructureHistoricalMismatchUI(null, "Run Historical Replay before analysis.");
+        return;
+    }
+    try {
+        const replayBefore = JSON.stringify(lastStructureHistoricalShadowReplay);
+        const result = window.HNDStructureHistoricalMismatchAnalyzer?.analyzeReplay?.(lastStructureHistoricalShadowReplay);
+        if (!result || JSON.stringify(lastStructureHistoricalShadowReplay) !== replayBefore) throw new Error("ANALYZER_MUTATED_REPLAY");
+        lastStructureHistoricalMismatchAnalysis = JSON.parse(JSON.stringify(result));
+        updateStructureHistoricalMismatchUI(result);
+    } catch (error) {
+        lastStructureHistoricalMismatchAnalysis = null;
+        updateStructureHistoricalMismatchUI({ status: "INVALID_REPLAY" }, "Historical analysis could not be completed.");
+    }
+}
+
+function downloadStructureHistoricalMismatchAnalysis() {
+    if (!lastStructureHistoricalMismatchAnalysis) {
+        setText("historicalMismatchWarning", "Analyze Historical Replay before export.");
+        return;
+    }
+    try {
+        const json = window.HNDStructureHistoricalMismatchAnalyzer?.exportAnalysis?.(lastStructureHistoricalMismatchAnalysis);
+        if (typeof json !== "string") throw new Error("INVALID_ANALYSIS_EXPORT");
+        const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-historical-mismatch-analysis-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { setText("historicalMismatchWarning", "Historical analysis export could not be created."); }
+}
+
+function setupStructureHistoricalMismatchControls() {
+    const analyzeButton = document.getElementById("analyzeHistoricalMismatch");
+    const exportButton = document.getElementById("exportHistoricalMismatchAnalysis");
+    if (analyzeButton && analyzeButton !== structureHistoricalMismatchAnalyzeButton) {
+        analyzeButton.addEventListener("click", analyzeStructureHistoricalReplay);
+        structureHistoricalMismatchAnalyzeButton = analyzeButton;
+    }
+    if (exportButton && exportButton !== structureHistoricalMismatchExportButton) {
+        exportButton.addEventListener("click", downloadStructureHistoricalMismatchAnalysis);
+        structureHistoricalMismatchExportButton = exportButton;
+    }
+}
+
+if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", setupStructureHistoricalMismatchControls, { once: true });
+else setupStructureHistoricalMismatchControls();
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -945,6 +1032,7 @@ function updateUI(
     setupStructureMismatchAnalyzerControls();
     setupStructurePaperTrialReadinessControls();
     setupStructureHistoricalShadowReplayControls();
+    setupStructureHistoricalMismatchControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -989,3 +1077,4 @@ setupStructureObservationPlanControls();
 setupStructureMismatchAnalyzerControls();
 setupStructurePaperTrialReadinessControls();
 setupStructureHistoricalShadowReplayControls();
+setupStructureHistoricalMismatchControls();

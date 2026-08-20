@@ -153,11 +153,14 @@
                 error: value && value.error != null ? String(value.error) : null,
                 candidateKey: value && typeof value.candidateKey === "string" ? value.candidateKey : null,
                 reason: value && typeof value.reason === "string" ? value.reason : null,
+                legacyReason: value && typeof value.legacyReason === "string" ? value.legacyReason : null,
+                gateReason: value && typeof value.gateReason === "string" ? value.gateReason : null,
                 legacyDecision: value && ["ALLOW", "BLOCK"].includes(value.legacyDecision) ? value.legacyDecision : null,
                 gateDecision: value && ["ALLOW", "BLOCK"].includes(value.gateDecision) ? value.gateDecision : null,
                 legacyDecisionSource: value && typeof value.legacyDecisionSource === "string" ? value.legacyDecisionSource : null,
                 gateDecisionSource: value && typeof value.gateDecisionSource === "string" ? value.gateDecisionSource : null,
-                legacyDecisionEvidence: value && value.legacyDecisionEvidence && typeof value.legacyDecisionEvidence === "object" ? clone(value.legacyDecisionEvidence) : null };
+                legacyDecisionEvidence: value && value.legacyDecisionEvidence && typeof value.legacyDecisionEvidence === "object" ? clone(value.legacyDecisionEvidence) : null,
+                gateDecisionEvidence: value && value.gateDecisionEvidence && typeof value.gateDecisionEvidence === "object" ? clone(value.gateDecisionEvidence) : null };
             observation.builderStatus = value && typeof value.builderStatus === "string" ? value.builderStatus : null;
             if (category === "MATCH") { output.matchCount += 1; output.comparableCount += 1; }
             else if (category === "MISMATCH") { output.mismatchCount += 1; output.comparableCount += 1; }
@@ -207,10 +210,12 @@
                 countsTowardLiveReadiness: false, category: observation.category,
                 comparison: observation.comparison, error: observation.error,
                 candidateKey: observation.candidateKey, reason: observation.reason,
+                legacyReason: observation.legacyReason, gateReason: observation.gateReason,
                 legacyDecision: observation.legacyDecision, gateDecision: observation.gateDecision,
                 legacyDecisionSource: observation.legacyDecisionSource,
                 gateDecisionSource: observation.gateDecisionSource,
                 legacyDecisionEvidence: clone(observation.legacyDecisionEvidence),
+                gateDecisionEvidence: clone(observation.gateDecisionEvidence),
                 builderStatus: observation.builderStatus };
         }) : [];
         return JSON.stringify(safe, null, 2);

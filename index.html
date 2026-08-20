@@ -534,6 +534,30 @@ TradeAI Pro
 <h4>Top Legacy Reasons</h4><ul id="historicalShadowReplayTopLegacyReasons"><li>-</li></ul>
 <h4>Top Builder Status</h4><ul id="historicalShadowReplayTopBuilderStatus"><li>-</li></ul>
 </div>
+<div id="historicalMismatchReview" class="structure-paper-readiness historical-mismatch-review analyzer-not-analyzed">
+<h3>HISTORICAL MISMATCH REVIEW</h3>
+<div class="structure-shadow-grid">
+<p>Analyzer Status</p><strong id="historicalMismatchAnalyzerStatus">NOT ANALYZED</strong>
+<p>Observations</p><strong id="historicalMismatchObservations">0</strong>
+<p>Comparable</p><strong id="historicalMismatchComparable">0</strong>
+<p>Matches</p><strong id="historicalMismatchMatches">0</strong>
+<p>Mismatches</p><strong id="historicalMismatchMismatches">0</strong>
+<p>Failures</p><strong id="historicalMismatchFailures">0</strong>
+<p>Not Comparable</p><strong id="historicalMismatchNotComparable">0</strong>
+<p>Match Rate</p><strong id="historicalMismatchMatchRate">-</strong>
+<p>Mismatch Rate</p><strong id="historicalMismatchMismatchRate">-</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="analyzeHistoricalMismatch" type="button">Analyze Historical Replay</button>
+<button id="exportHistoricalMismatchAnalysis" type="button">Export Historical Analysis JSON</button>
+</div>
+<p id="historicalMismatchWarning" class="structure-shadow-warning" aria-live="polite"></p>
+<div class="historical-mismatch-table-wrap">
+<table><thead><tr><th>Priority</th><th>Market</th><th>TF</th><th>Category</th><th>Legacy Decision</th><th>Gate Decision</th><th>Legacy Reason</th><th>Gate Reason</th><th>Builder Status</th><th>Suggested Review</th></tr></thead>
+<tbody id="historicalMismatchReviewBody"><tr><td colspan="10">No historical analysis</td></tr></tbody></table>
+</div>
+<p id="historicalMismatchDisclaimer" class="structure-shadow-safety">Historical diagnostic classification only; this analysis does not change rules, count toward live readiness, or authorize entries.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -667,6 +691,7 @@ TradeAI Pro
 <script src="js/hndai-v1/structureHistoricalLegacyCandidateAdapter.js"></script>
 <script src="js/hndai-v1/structureHistoricalReplayBinancePager.js"></script>
 <script src="js/hndai-v1/structureHistoricalShadowReplay.js"></script>
+<script src="js/hndai-v1/structureHistoricalMismatchAnalyzer.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/backtestBenchmark.js"></script>
