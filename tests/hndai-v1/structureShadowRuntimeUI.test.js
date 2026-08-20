@@ -72,6 +72,39 @@ function loadUI(includeElements = true) {
     return { update: context.updateStructureShadowUI, elements };
 }
 
+function loadHistoricalMismatchUI(options = {}) {
+    const listeners = new Map(), elements = {};
+    function element(id) {
+        const item = { id, textContent: "", children: [], classList: classList(), disabled: false,
+            addEventListener(type, handler) { const key = `${id}:${type}`, list = listeners.get(key) || []; list.push(handler); listeners.set(key, list); },
+            appendChild(child) { this.children.push(child); }, replaceChildren(...children) { this.children = children; },
+            click() { (listeners.get(`${id}:click`) || []).forEach(handler => handler({ target: item })); }, remove() {} };
+        return item;
+    }
+    ["historicalMismatchAnalyzerStatus", "historicalMismatchObservations", "historicalMismatchComparable",
+        "historicalMismatchMatches", "historicalMismatchMismatches", "historicalMismatchFailures",
+        "historicalMismatchNotComparable", "historicalMismatchMatchRate", "historicalMismatchMismatchRate",
+        "historicalMismatchWarning", "historicalMismatchReview", "historicalMismatchReviewBody"]
+        .forEach(id => { elements[id] = element(id); });
+    if (options.analyze !== false) elements.analyzeHistoricalMismatch = element("analyzeHistoricalMismatch");
+    if (options.export !== false) elements.exportHistoricalMismatchAnalysis = element("exportHistoricalMismatchAnalysis");
+    const document = { readyState: "complete", body: element("body"),
+        getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
+    const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
+        matchCount: 1, mismatchCount: 1, failureCount: 0, notComparableCount: 0, matchRate: 50, mismatchRate: 50,
+        reviewItems: [{ priority: "HIGH", symbol: "BTCUSDT", interval: "4h", category: "LEGACY_ALLOW_GATE_BLOCK",
+            legacyDecision: "ALLOW", gateDecision: "BLOCK", legacyReason: "SETUP_CREATED", gateReason: "NO_EVENT",
+            builderStatus: "INPUT_READY", suggestedReview: "Compare direct evidence." }] };
+    const context = { document, window: { HNDStructureHistoricalMismatchAnalyzer: {
+            analyzeReplay() { return clone(analysis); }, exportAnalysis() { return "{}"; } } }, activeTrade: null,
+        console: { log() {}, warn() {}, error() {} }, Blob: function () {},
+        URL: { createObjectURL() { return "blob:test"; }, revokeObjectURL() {} }, Date };
+    vm.runInNewContext(uiCode, context);
+    return { context, elements, listenerCount(id) { return (listeners.get(`${id}:click`) || []).length; },
+        setReplay(value) { vm.runInNewContext(`lastStructureHistoricalShadowReplay = ${JSON.stringify(value)}`, context); },
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls()", context); } };
+}
+
 function candles() {
     return [
         { time: 1000, closeTime: 1999, open: 10, high: 12, low: 9, close: 11, volume: 5 },
@@ -235,6 +268,32 @@ test("existing setup integration coverage remains present", () => {
     const integration = fs.readFileSync(path.join(root,
         "tests/hndai-v1/setupEngineStructureShadowIntegration.test.js"), "utf8");
     assert.ok(integration.includes("existing setup locked path is unchanged and not applicable"));
+});
+
+test("historical mismatch buttons bind exactly one listener", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setup(); fixture.setup();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatch"), 1);
+    assert.strictEqual(fixture.listenerCount("exportHistoricalMismatchAnalysis"), 1);
+});
+
+test("historical replay analyze click updates UI", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setReplay({ schemaVersion: "HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1" });
+    fixture.elements.analyzeHistoricalMismatch.click();
+    assert.strictEqual(fixture.elements.historicalMismatchAnalyzerStatus.textContent, "REVIEW ITEMS FOUND");
+    assert.strictEqual(fixture.elements.historicalMismatchMismatches.textContent, 1);
+    assert.strictEqual(fixture.elements.historicalMismatchReviewBody.children.length, 1);
+});
+
+test("historical mismatch export binds without analyze button", () => {
+    const fixture = loadHistoricalMismatchUI({ analyze: false });
+    assert.strictEqual(fixture.listenerCount("exportHistoricalMismatchAnalysis"), 1);
+    assert.doesNotThrow(() => fixture.elements.exportHistoricalMismatchAnalysis.click());
+});
+
+test("historical mismatch analyze binds without export button", () => {
+    const fixture = loadHistoricalMismatchUI({ export: false }); fixture.setReplay({ schemaVersion: "HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1" });
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatch"), 1);
+    assert.doesNotThrow(() => fixture.elements.analyzeHistoricalMismatch.click());
 });
 
 let passed = 0;
