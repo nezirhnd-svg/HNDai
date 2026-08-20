@@ -212,7 +212,7 @@
         };
     }
 
-    function buildPlan(input = {}) {
+    function buildPlan(input = {}, pureOptions = null) {
         const setup = input.setupState?.currentSetup;
         if (!validateSetup(setup)) return { valid: false, reason: "INVALID_SETUP" };
         const stopResult = calculateStopLoss(setup);
@@ -229,7 +229,8 @@
             : targetResult.takeProfit < setup.entryTarget && setup.entryTarget < stopResult.stopLoss;
         if (!ordered || targetResult.riskReward + epsilon < HND_TRADE_PLAN_MIN_RR)
             return { valid: false, reason: "INVALID_TAKE_PROFIT", stopResult, targetResult };
-        const now = Date.now();
+        const now = pureOptions && Number.isSafeInteger(pureOptions.evaluationTime) &&
+            pureOptions.evaluationTime > 0 ? pureOptions.evaluationTime : Date.now();
         const state = mapSetupStateToPlanState(setup.state);
         const plan = {
             id: `PLAN-${setup.key}`, key: `${setup.key}|TRADE_PLAN_V4.2`,

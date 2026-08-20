@@ -165,7 +165,16 @@
                     ? { direction: value.legacyPlanEvidence.direction, entryMode: value.legacyPlanEvidence.entryMode,
                         entryPrice: value.legacyPlanEvidence.entryPrice, entryLow: value.legacyPlanEvidence.entryLow,
                         entryHigh: value.legacyPlanEvidence.entryHigh, stopLoss: value.legacyPlanEvidence.stopLoss,
-                        takeProfit: value.legacyPlanEvidence.takeProfit } : null };
+                        takeProfit: value.legacyPlanEvidence.takeProfit,
+                        symbol: value.legacyPlanEvidence.symbol, interval: value.legacyPlanEvidence.interval,
+                        candidateKey: value.legacyPlanEvidence.candidateKey,
+                        setupCandidateKey: value.legacyPlanEvidence.setupCandidateKey,
+                        evaluationCloseTime: value.legacyPlanEvidence.evaluationCloseTime,
+                        source: value.legacyPlanEvidence.source,
+                        countsTowardLiveReadiness: value.legacyPlanEvidence.countsTowardLiveReadiness,
+                        setupCore: value.legacyPlanEvidence.setupCore, planCore: value.legacyPlanEvidence.planCore,
+                        stopSource: value.legacyPlanEvidence.stopSource,
+                        targetSource: value.legacyPlanEvidence.targetSource } : null };
             observation.builderStatus = value && typeof value.builderStatus === "string" ? value.builderStatus : null;
             if (category === "MATCH") { output.matchCount += 1; output.comparableCount += 1; }
             else if (category === "MISMATCH") { output.mismatchCount += 1; output.comparableCount += 1; }

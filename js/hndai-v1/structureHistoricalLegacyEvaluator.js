@@ -1,10 +1,11 @@
 (function (root, factory) {
     "use strict";
     var api = factory(function () { return root && root.HNDSetupEngine; },
-        function () { return root && root.HNDStructureHistoricalLegacyInputBuilder; });
+        function () { return root && root.HNDStructureHistoricalLegacyInputBuilder; },
+        function () { return root && root.HNDStructureHistoricalPlanEvidence; });
     if (typeof module === "object" && module.exports) module.exports = api;
     if (root && typeof root === "object") root.HNDStructureHistoricalLegacyEvaluator = api;
-}(typeof window !== "undefined" ? window : null, function (getCore, getInputBuilder) {
+}(typeof window !== "undefined" ? window : null, function (getCore, getInputBuilder, getPlanEvidence) {
     "use strict";
     var SCHEMA = "HND_STRUCTURE_HISTORICAL_LEGACY_EVALUATOR_V1";
     var CONTEXT_FIELDS = ["symbol", "interval", "evaluationIndex", "evaluationCloseTime",
@@ -26,7 +27,7 @@
     function unavailable(reason, error, warnings, builderStatus) { return { valid: true, error: error || null,
         schemaVersion: SCHEMA, decision: "UNAVAILABLE", decisionSource: null, evidence: null,
         reason: reason, candidateKey: null, filterResults: [], warnings: warnings || [],
-        builderStatus: builderStatus || null }; }
+        builderStatus: builderStatus || null, planEvidence: null }; }
     function validCandle(candle) { return exact(candle, ["openTime", "closeTime", "open", "high", "low", "close", "volume"]) &&
         Number.isSafeInteger(candle.openTime) && Number.isSafeInteger(candle.closeTime) && candle.openTime > 0 && candle.closeTime > candle.openTime &&
         [candle.open, candle.high, candle.low, candle.close, candle.volume].every(Number.isFinite) && candle.open > 0 && candle.high > 0 && candle.low > 0 && candle.close > 0 && candle.volume >= 0 &&
@@ -93,11 +94,31 @@
         if (!result || result.valid !== true || !["ALLOW", "BLOCK"].includes(result.decision) ||
             typeof result.decisionSource !== "string" || !result.decisionSource || REASONS.indexOf(result.reason) === -1 || !result.debug)
             return unavailable("LEGACY_SHARED_CORE_MALFORMED", null);
+        var planEvidence = null;
+        var warnings = Array.isArray(bundle.warnings) ? clone(bundle.warnings) : [];
+        if (result.decision === "ALLOW") {
+            var evidenceBuilder = getPlanEvidence();
+            if (!evidenceBuilder || typeof evidenceBuilder.buildPlanEvidence !== "function") {
+                warnings.push("PLAN_EVIDENCE_DEPENDENCY_UNAVAILABLE");
+            } else {
+                try {
+                    var planResult = evidenceBuilder.buildPlanEvidence(clone(bundle.input), clone(result), {
+                        symbol: safeContext.symbol, interval: safeContext.interval,
+                        candidateKey: safeContext.pendingCandidate.key,
+                        evaluationCloseTime: safeContext.evaluationCloseTime
+                    });
+                    if (planResult && planResult.valid === true &&
+                        planResult.status === "PLAN_EVIDENCE_AVAILABLE" && planResult.evidence)
+                        planEvidence = clone(planResult.evidence);
+                    else warnings.push("PLAN_EVIDENCE_" + (planResult && planResult.error || "UNAVAILABLE"));
+                } catch (planError) { warnings.push("PLAN_EVIDENCE_EXCEPTION"); }
+            }
+        }
         return { valid: true, error: null, schemaVersion: SCHEMA, decision: result.decision,
             decisionSource: result.decisionSource, evidence: clone(result.evidence), reason: result.reason,
             candidateKey: result.candidate && typeof result.candidate.key === "string" ? result.candidate.key : null,
-            filterResults: filters(result.debug), warnings: Array.isArray(bundle.warnings) ? clone(bundle.warnings) : [],
-            builderStatus: bundle.status };
+            filterResults: filters(result.debug), warnings: warnings,
+            builderStatus: bundle.status, planEvidence: planEvidence };
     }
     return { getSchemaVersion: getSchemaVersion, getVocabulary: getVocabulary,
         evaluateHistoricalLegacy: evaluateHistoricalLegacy };

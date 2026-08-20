@@ -4,7 +4,11 @@ const root = path.resolve(__dirname, "../.."), modulePath = path.join(root, "js/
 const api = require(modulePath), tests = []; function test(name, fn) { tests.push({ name, fn }); }
 const clone = value => JSON.parse(JSON.stringify(value));
 function evidence(change = {}) { return Object.assign({ direction: "LONG", entryMode: "LIMIT", entryPrice: 100,
-    entryLow: 99, entryHigh: 101, stopLoss: 90, takeProfit: 110 }, change); }
+    entryLow: 99, entryHigh: 101, stopLoss: 90, takeProfit: 110,
+    symbol: "BTCUSDT", interval: "4h", candidateKey: "C1", setupCandidateKey: "SETUP-C1",
+    evaluationCloseTime: 1999, source: "HISTORICAL_REPLAY", countsTowardLiveReadiness: false,
+    setupCore: "HND_SETUP_ENGINE_BUILD_SETUP_FROM_CANDIDATE_V4_1",
+    planCore: "HND_TRADE_PLAN_ENGINE_BUILD_PLAN_V4_2" }, change); }
 function observation(change = {}) { return Object.assign({ key: "BTCUSDT|4h|1999|0", candidateKey: "C1", symbol: "BTCUSDT",
     interval: "4h", evaluationCloseTime: 1999, source: "HISTORICAL_REPLAY", countsTowardLiveReadiness: false,
     category: "MISMATCH", comparison: "LEGACY_ALLOW_GATE_BLOCK", legacyPlanEvidence: evidence() }, change); }
@@ -39,6 +43,11 @@ test("direction not inferred",()=>assert.strictEqual(run([],observation({legacyP
 test("entry not inferred",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({entryPrice:null,entryLow:null,entryHigh:null})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
 test("stop not inferred",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({stopLoss:null})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
 test("target not inferred",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({takeProfit:null})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
+test("symbol provenance mismatch not evaluable",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({symbol:"ETHUSDT"})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
+test("interval provenance mismatch not evaluable",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({interval:"15m"})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
+test("candidate provenance mismatch not evaluable",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({candidateKey:"OTHER"})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
+test("timestamp provenance mismatch not evaluable",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({evaluationCloseTime:2000})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
+test("readiness provenance must remain false",()=>assert.strictEqual(run([],observation({legacyPlanEvidence:evidence({countsTowardLiveReadiness:true})}),{maximumForwardBars:1,includeMatches:false}).outcomeItems[0].category,"NOT_EVALUABLE"));
 test("future scan starts after evaluation",()=>assert.strictEqual(run([candle(2000,2999,102,103,101,102),candle(3000,3999,102,110,99,105)]).outcomeItems[0].entryReachedAt,3999));
 test("maximum horizon applied",()=>assert.strictEqual(run([candle(2000,2999,102,103,101,102),candle(3000,3999,102,103,101,102),candle(4000,4999,100,112,99,110)],observation(),{maximumForwardBars:2,includeMatches:false}).outcomeItems[0].category,"ENTRY_NOT_REACHED"));
 test("entry not reached",()=>assert.strictEqual(run([candle(2000,2999,102,104,101,103),candle(3000,3999,103,105,102,104)]).outcomeItems[0].category,"ENTRY_NOT_REACHED"));

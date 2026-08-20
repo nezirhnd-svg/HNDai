@@ -983,7 +983,7 @@ function clusterLiquidityCandidates(candidates, tolerance) {
 }
 
 function detectLiquidityZones(options = {}) {
-    const data = getSmartMoneyCandleData();
+    const data = getSmartMoneyCandleData(options.candles);
     const normalizedOptions = getLiquidityZoneOptions(options);
 
     if (data.length < normalizedOptions.lookback * 2 + 1) {
@@ -993,7 +993,7 @@ function detectLiquidityZones(options = {}) {
     let swings;
 
     try {
-        swings = getSwings(normalizedOptions.lookback);
+        swings = getSwings(normalizedOptions.lookback, data);
     } catch (error) {
         return [];
     }
@@ -2145,7 +2145,9 @@ console.log("HNDai SmartMoney v5 Ready");
 window.HNDSmartMoney = {
     ...(window.HNDSmartMoney || {}),
     selectStructureConfirmedPriceZones,
-    selectSignificantStructureEventsForZoneQualification
+    selectSignificantStructureEventsForZoneQualification,
+    detectLiquidityZones,
+    getStrongestLiquidityZones
 };
 
 window.SM_LOADED = true;

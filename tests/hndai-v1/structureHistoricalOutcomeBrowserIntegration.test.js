@@ -20,6 +20,8 @@ async function openPage(browser, baseUrl) { const page = await browser.newPage()
     await page.goto(`${baseUrl}/index.html`, { waitUntil: "load" }); return page; }
 let page;
 test("actual served ui asset version is deterministic", async () => assert.match(fs.readFileSync(path.join(root,"index.html"),"utf8"),/<script src="js\/ui\.js\?v=6"><\/script>/));
+test("historical plan evidence browser dependency loads", async () => assert.strictEqual(await page.evaluate(() =>
+    typeof window.HNDStructureHistoricalPlanEvidence?.buildPlanEvidence), "function"));
 test("DOMContentLoaded lifecycle binds exact outcome buttons once", async () => { const counts = await page.evaluate(() => window.__hndListenerCounts);
     assert.strictEqual(counts["analyzeHistoricalMismatchOutcomes:click"],1); assert.strictEqual(counts["exportHistoricalMismatchOutcomes:click"],1); });
 test("complete lifecycle repeated setup stays idempotent", async () => { const result = await page.evaluate(() => {
@@ -33,6 +35,19 @@ test("actual button click after replay and mismatch updates outcome UI", async (
     lastStructureHistoricalShadowReplayCandles = [{openTime:1000,closeTime:1999,open:100,high:101,low:99,close:100,volume:10}]; });
     await page.locator("#analyzeHistoricalMismatchOutcomes").click();
     assert.strictEqual(await page.locator("#historicalOutcomeStatus").textContent(),"NO EVALUABLE ITEMS"); });
+test("provenance-bound plan evidence updates outcome UI", async () => { await page.evaluate(() => {
+    const evidence={direction:"LONG",entryMode:"ZONE",entryPrice:100,entryLow:99,entryHigh:101,stopLoss:90,takeProfit:110,
+        symbol:"BTCUSDT",interval:"4h",candidateKey:"C1",setupCandidateKey:"SETUP-C1",evaluationCloseTime:1999,
+        source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,setupCore:"SETUP_CORE",planCore:"PLAN_CORE"};
+    lastStructureHistoricalShadowReplay={valid:true,schemaVersion:"HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1",source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,
+        observations:[{key:"BTCUSDT|4h|1999|0",candidateKey:"C1",symbol:"BTCUSDT",interval:"4h",evaluationCloseTime:1999,source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,category:"MISMATCH",comparison:"LEGACY_ALLOW_GATE_BLOCK",legacyPlanEvidence:evidence}]};
+    lastStructureHistoricalMismatchAnalysis={valid:true,schemaVersion:"HND_STRUCTURE_HISTORICAL_MISMATCH_ANALYSIS_V1",source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,status:"REVIEW_ITEMS_FOUND",mismatchCount:1,reviewItems:[]};
+    const future=Array.from({length:24},(_,index)=>({openTime:2000+index*1000,closeTime:2999+index*1000,
+        open:102,high:index===1?111:105,low:index===0?99:95,close:102,volume:10}));
+    lastStructureHistoricalShadowReplayCandles=[{openTime:1000,closeTime:1999,open:100,high:101,low:99,close:100,volume:10}].concat(future); });
+    await page.locator("#analyzeHistoricalMismatchOutcomes").click();
+    assert.strictEqual(await page.locator("#historicalOutcomeStatus").textContent(),"OUTCOMES AVAILABLE");
+    assert.strictEqual(await page.locator("#historicalOutcomeTpFirst").textContent(),"1"); });
 (async()=>{const own=process.env.HND_TEST_BASE_URL?null:await localServer(),base=process.env.HND_TEST_BASE_URL||own.url;
     const browser=await chromium.launch({headless:true,executablePath:chromePath()}); let assertions=0;
     try{page=await openPage(browser,base);for(const item of tests){try{await item.fn();assertions+=1;}catch(error){console.error(`FAIL:${item.name}`);throw error;}}
