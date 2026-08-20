@@ -39,12 +39,19 @@
         return candles.every(function (candle) { if (!validCandle(candle) || candle.closeTime <= previous) return false; previous = candle.closeTime; return true; }); }
     function safeHistorical(value, schema) { return value && typeof value === "object" && !Array.isArray(value) &&
         value.valid === true && value.schemaVersion === schema && value.source === SOURCE && value.countsTowardLiveReadiness === false; }
-    function validEvidence(value) { if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    function validEvidence(value, observation) { if (!value || typeof value !== "object" || Array.isArray(value)) return false;
         var fields = ["direction", "entryMode", "entryPrice", "entryLow", "entryHigh", "stopLoss", "takeProfit"];
         if (!fields.every(function (field) { return Object.prototype.hasOwnProperty.call(value, field); })) return false;
         if (["LONG", "SHORT"].indexOf(value.direction) === -1 || ["MARKET", "LIMIT", "ZONE"].indexOf(value.entryMode) === -1) return false;
         if (![value.entryPrice, value.entryLow, value.entryHigh, value.stopLoss, value.takeProfit].every(function (item) { return item === null || (Number.isFinite(item) && item > 0); })) return false;
         if (!(Number.isFinite(value.stopLoss) && Number.isFinite(value.takeProfit))) return false;
+        if (!observation || value.source !== SOURCE || value.countsTowardLiveReadiness !== false ||
+            value.symbol !== observation.symbol || value.interval !== observation.interval ||
+            value.candidateKey !== observation.candidateKey ||
+            value.evaluationCloseTime !== observation.evaluationCloseTime ||
+            typeof value.setupCandidateKey !== "string" || !value.setupCandidateKey ||
+            typeof value.setupCore !== "string" || !value.setupCore ||
+            typeof value.planCore !== "string" || !value.planCore) return false;
         if (value.entryMode === "MARKET" && !Number.isFinite(value.entryPrice)) return false;
         if (value.entryMode === "LIMIT" && !Number.isFinite(value.entryPrice)) return false;
         if (value.entryMode === "ZONE" && !(Number.isFinite(value.entryLow) && Number.isFinite(value.entryHigh) && value.entryLow <= value.entryHigh)) return false;
@@ -63,18 +70,18 @@
     function hits(candle, evidence) { return evidence.direction === "LONG"
         ? { stop: candle.low <= evidence.stopLoss, target: candle.high >= evidence.takeProfit }
         : { stop: candle.high >= evidence.stopLoss, target: candle.low <= evidence.takeProfit }; }
-    function directCodes(evidence) { return validEvidence(evidence) ? ["LEGACY_DIRECTION", "LEGACY_ENTRY_MODE", "LEGACY_ENTRY",
+    function directCodes(evidence, observation) { return validEvidence(evidence, observation) ? ["LEGACY_DIRECTION", "LEGACY_ENTRY_MODE", "LEGACY_ENTRY",
         "LEGACY_STOP_LOSS", "LEGACY_TAKE_PROFIT", "EVALUATION_CLOSE_TIME", "CANDIDATE_KEY"] : []; }
     function itemBase(observation, category, evidence) { return { key: observation.key, candidateKey: observation.candidateKey,
         symbol: observation.symbol, interval: observation.interval, evaluationCloseTime: observation.evaluationCloseTime,
         category: category, direction: evidence && evidence.direction || null,
         entry: evidence ? { mode: evidence.entryMode, price: evidence.entryPrice, low: evidence.entryLow, high: evidence.entryHigh } : null,
         stopLoss: evidence && evidence.stopLoss || null, takeProfit: evidence && evidence.takeProfit || null,
-        entryReachedAt: null, outcomeAt: null, barsObserved: 0, directEvidenceCodes: directCodes(evidence),
+        entryReachedAt: null, outcomeAt: null, barsObserved: 0, directEvidenceCodes: directCodes(evidence, observation),
         diagnosticInterpretation: INTERPRETATION[category] }; }
     function classify(observation, candles, policy) {
         var evidence = observation.legacyPlanEvidence;
-        if (!validEvidence(evidence)) return itemBase(observation, "NOT_EVALUABLE", null);
+        if (!validEvidence(evidence, observation)) return itemBase(observation, "NOT_EVALUABLE", null);
         var future = candles.filter(function (candle) { return candle.closeTime > observation.evaluationCloseTime; });
         if (future.length < policy.maximumForwardBars) {
             var insufficient = itemBase(observation, "INSUFFICIENT_FUTURE_DATA", evidence);

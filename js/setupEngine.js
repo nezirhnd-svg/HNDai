@@ -575,9 +575,11 @@
         return `${side} ${candidate.sourceType === "ORDER_BLOCK" ? "ORDER BLOCK" : "FVG"} RETEST`;
     }
 
-    function createSetup(candidate, input, candles) {
+    function buildSetupFromCandidate(candidate, input, candles, evaluationTime) {
+        if (!candidate || typeof candidate !== "object" || !input || typeof input !== "object" ||
+            !Number.isSafeInteger(evaluationTime) || evaluationTime <= 0) return null;
         const latest = candles[candles.length - 1] || null;
-        const now = Date.now();
+        const now = evaluationTime;
         const inZone = input.price >= candidate.entryLow && input.price <= candidate.entryHigh;
         const state = inZone ? HND_SETUP_STATES.TRIGGERED
             : candidate.distanceATR <= HND_SETUP_APPROACH_ATR ? HND_SETUP_STATES.ARMED : HND_SETUP_STATES.PENDING;
@@ -601,6 +603,10 @@
             ageBars: 0, analysisSnapshot: snapshotAnalysis(input.analysis),
             sourceSnapshot: candidate.zones.map(clone)
         };
+    }
+
+    function createSetup(candidate, input, candles) {
+        return buildSetupFromCandidate(candidate, input, candles, Date.now());
     }
 
     function sourceInvalidated(setup, qualifiedPriceZones) {
@@ -823,6 +829,7 @@
     window.HNDSetupEngine = {
         evaluate, reset, getState, getCurrentSetup, getHistory, buildCandidates,
         updateExistingSetup, getLastDebug, getLastStructureShadow,
-        explainLastEvaluation, buildCandidatesDetailed, evaluateCandidateDecisionBundle
+        explainLastEvaluation, buildCandidatesDetailed, evaluateCandidateDecisionBundle,
+        buildSetupFromCandidate
     };
 })();
