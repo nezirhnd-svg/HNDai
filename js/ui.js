@@ -16,9 +16,13 @@ let structurePaperTrialReadinessControlsInitialized = false;
 let lastStructurePaperTrialReadiness = null;
 let structureHistoricalShadowReplayControlsInitialized = false;
 let lastStructureHistoricalShadowReplay = null;
+let lastStructureHistoricalShadowReplayCandles = null;
 let structureHistoricalMismatchAnalyzeButton = null;
 let structureHistoricalMismatchExportButton = null;
 let lastStructureHistoricalMismatchAnalysis = null;
+let structureHistoricalOutcomeAnalyzeButton = null;
+let structureHistoricalOutcomeExportButton = null;
+let lastStructureHistoricalOutcomeAnalysis = null;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -736,9 +740,15 @@ async function runStructureHistoricalShadowReplay() {
         result.warnings.push(`DUPLICATES_REMOVED:${paged.duplicateCount}`);
         result.warnings.push(`RATE_LIMIT_RETRIES:${paged.rateLimitRetryCount}`);
         lastStructureHistoricalShadowReplay = JSON.parse(JSON.stringify(result));
+        lastStructureHistoricalShadowReplayCandles = JSON.parse(JSON.stringify(closed));
+        lastStructureHistoricalMismatchAnalysis = null;
+        lastStructureHistoricalOutcomeAnalysis = null;
         updateStructureHistoricalShadowReplayUI(result);
     } catch (error) {
         lastStructureHistoricalShadowReplay = null;
+        lastStructureHistoricalShadowReplayCandles = null;
+        lastStructureHistoricalMismatchAnalysis = null;
+        lastStructureHistoricalOutcomeAnalysis = null;
         updateStructureHistoricalShadowReplayUI({ status: "DEPENDENCY_FAILURE", source: "HISTORICAL_REPLAY",
             symbol: document.getElementById("historicalShadowReplaySymbol")?.value || null,
             interval: document.getElementById("historicalShadowReplayInterval")?.value || null });
@@ -850,6 +860,88 @@ function setupStructureHistoricalMismatchControls() {
 if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", setupStructureHistoricalMismatchControls, { once: true });
 else setupStructureHistoricalMismatchControls();
+
+function updateStructureHistoricalOutcomeUI(result = null, warning = "") {
+    const value = result || {}, status = value.status || "NOT_ANALYZED";
+    setText("historicalOutcomeStatus", String(status).replaceAll("_", " "));
+    [["historicalOutcomeMismatches", "analyzedMismatchCount"], ["historicalOutcomeEvaluable", "evaluableCount"],
+        ["historicalOutcomeNotEvaluable", "notEvaluableCount"], ["historicalOutcomeTpFirst", "tpFirstCount"],
+        ["historicalOutcomeSlFirst", "slFirstCount"], ["historicalOutcomeAmbiguous", "ambiguousCount"],
+        ["historicalOutcomeEntryNotReached", "entryNotReachedCount"], ["historicalOutcomeOpen", "openAtHorizonCount"],
+        ["historicalOutcomeInsufficient", "insufficientFutureDataCount"]]
+        .forEach(pair => setText(pair[0], Number.isSafeInteger(value[pair[1]]) ? value[pair[1]] : 0));
+    setText("historicalOutcomeWarning", warning);
+    const section = document.getElementById("historicalOutcomeReview");
+    section?.classList?.forEach?.(name => { if (name.startsWith("outcome-")) section.classList.remove(name); });
+    section?.classList?.add(`outcome-${status.toLowerCase().replaceAll("_", "-")}`);
+    const body = document.getElementById("historicalOutcomeReviewBody");
+    if (!body) return;
+    body.replaceChildren();
+    const items = Array.isArray(value.outcomeItems) ? value.outcomeItems.slice(0, 100) : [];
+    if (!items.length) {
+        const row = document.createElement("tr"), column = document.createElement("td");
+        column.colSpan = 8; column.textContent = "No historical outcome items"; row.appendChild(column); body.appendChild(row); return;
+    }
+    items.forEach(item => {
+        const row = document.createElement("tr");
+        [item.symbol, item.interval, item.direction || "-", item.category, item.entryReachedAt || "-",
+            item.outcomeAt || "-", item.barsObserved, item.diagnosticInterpretation]
+            .forEach(content => { const column = document.createElement("td"); column.textContent = String(content); row.appendChild(column); });
+        body.appendChild(row);
+    });
+}
+
+function analyzeStructureHistoricalMismatchOutcomes() {
+    if (!lastStructureHistoricalShadowReplay || !lastStructureHistoricalMismatchAnalysis || !lastStructureHistoricalShadowReplayCandles) {
+        lastStructureHistoricalOutcomeAnalysis = null;
+        updateStructureHistoricalOutcomeUI(null, "Run Historical Replay and Historical Mismatch Analysis first."); return;
+    }
+    try {
+        const before = JSON.stringify([lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles]);
+        const result = window.HNDStructureHistoricalMismatchOutcomeAnalyzer?.analyzeOutcomes?.(
+            lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles);
+        if (!result || JSON.stringify([lastStructureHistoricalMismatchAnalysis, lastStructureHistoricalShadowReplay,
+            lastStructureHistoricalShadowReplayCandles]) !== before) throw new Error("OUTCOME_ANALYZER_MUTATED_INPUT");
+        lastStructureHistoricalOutcomeAnalysis = JSON.parse(JSON.stringify(result));
+        updateStructureHistoricalOutcomeUI(result);
+    } catch (error) {
+        lastStructureHistoricalOutcomeAnalysis = null;
+        updateStructureHistoricalOutcomeUI({ status: "INVALID_INPUT" }, "Historical outcome analysis could not be completed.");
+    }
+}
+
+function downloadStructureHistoricalMismatchOutcomes() {
+    if (!lastStructureHistoricalOutcomeAnalysis) {
+        setText("historicalOutcomeWarning", "Analyze Mismatch Outcomes before export."); return;
+    }
+    try {
+        const json = window.HNDStructureHistoricalMismatchOutcomeAnalyzer?.exportOutcomeAnalysis?.(lastStructureHistoricalOutcomeAnalysis);
+        if (typeof json !== "string") throw new Error("INVALID_OUTCOME_EXPORT");
+        const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob), link = document.createElement("a");
+        link.href = url; link.download = `HNDai-historical-mismatch-outcomes-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body?.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    } catch (error) { setText("historicalOutcomeWarning", "Historical outcome export could not be created."); }
+}
+
+function setupStructureHistoricalOutcomeControls() {
+    const analyzeButton = document.getElementById("analyzeHistoricalMismatchOutcomes");
+    const exportButton = document.getElementById("exportHistoricalMismatchOutcomes");
+    if (analyzeButton && analyzeButton !== structureHistoricalOutcomeAnalyzeButton) {
+        analyzeButton.addEventListener("click", analyzeStructureHistoricalMismatchOutcomes);
+        structureHistoricalOutcomeAnalyzeButton = analyzeButton;
+    }
+    if (exportButton && exportButton !== structureHistoricalOutcomeExportButton) {
+        exportButton.addEventListener("click", downloadStructureHistoricalMismatchOutcomes);
+        structureHistoricalOutcomeExportButton = exportButton;
+    }
+}
+
+setupStructureHistoricalOutcomeControls();
+if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", setupStructureHistoricalOutcomeControls, { once: true });
 
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
@@ -1033,6 +1125,7 @@ function updateUI(
     setupStructurePaperTrialReadinessControls();
     setupStructureHistoricalShadowReplayControls();
     setupStructureHistoricalMismatchControls();
+    setupStructureHistoricalOutcomeControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -1078,3 +1171,4 @@ setupStructureMismatchAnalyzerControls();
 setupStructurePaperTrialReadinessControls();
 setupStructureHistoricalShadowReplayControls();
 setupStructureHistoricalMismatchControls();
+setupStructureHistoricalOutcomeControls();

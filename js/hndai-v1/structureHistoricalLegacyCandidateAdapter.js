@@ -153,6 +153,8 @@
                     gateReason: gateEvidence.reason, legacyDecisionSource: legacy.decisionSource,
                     gateDecisionSource: "HND_STRUCTURE_SETUP_ADAPTER_V1",
                     legacyDecisionEvidence: clone(legacy.evidence), gateDecisionEvidence: gateEvidence,
+                    legacyPlanEvidence: legacy.planEvidence && typeof legacy.planEvidence === "object"
+                        ? clone(legacy.planEvidence) : null,
                     builderStatus: legacy.builderStatus || null });
             } catch (error) { comparisons.push({ valid: false, error: "GATE_EVALUATION_EXCEPTION", comparison: "PIPELINE_FAILED", candidateKey: resolved.key }); }
         });

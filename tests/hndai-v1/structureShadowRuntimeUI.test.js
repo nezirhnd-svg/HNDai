@@ -86,23 +86,38 @@ function loadHistoricalMismatchUI(options = {}) {
         "historicalMismatchNotComparable", "historicalMismatchMatchRate", "historicalMismatchMismatchRate",
         "historicalMismatchWarning", "historicalMismatchReview", "historicalMismatchReviewBody"]
         .forEach(id => { elements[id] = element(id); });
+    ["historicalOutcomeStatus", "historicalOutcomeMismatches", "historicalOutcomeEvaluable",
+        "historicalOutcomeNotEvaluable", "historicalOutcomeTpFirst", "historicalOutcomeSlFirst",
+        "historicalOutcomeAmbiguous", "historicalOutcomeEntryNotReached", "historicalOutcomeOpen",
+        "historicalOutcomeInsufficient", "historicalOutcomeWarning", "historicalOutcomeReview",
+        "historicalOutcomeReviewBody"].forEach(id => { elements[id] = element(id); });
     if (options.analyze !== false) elements.analyzeHistoricalMismatch = element("analyzeHistoricalMismatch");
     if (options.export !== false) elements.exportHistoricalMismatchAnalysis = element("exportHistoricalMismatchAnalysis");
-    const document = { readyState: "complete", body: element("body"),
+    if (options.outcomeAnalyze !== false) elements.analyzeHistoricalMismatchOutcomes = element("analyzeHistoricalMismatchOutcomes");
+    if (options.outcomeExport !== false) elements.exportHistoricalMismatchOutcomes = element("exportHistoricalMismatchOutcomes");
+    const document = { readyState: options.readyState || "complete", body: element("body"),
         getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
     const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
         matchCount: 1, mismatchCount: 1, failureCount: 0, notComparableCount: 0, matchRate: 50, mismatchRate: 50,
         reviewItems: [{ priority: "HIGH", symbol: "BTCUSDT", interval: "4h", category: "LEGACY_ALLOW_GATE_BLOCK",
             legacyDecision: "ALLOW", gateDecision: "BLOCK", legacyReason: "SETUP_CREATED", gateReason: "NO_EVENT",
             builderStatus: "INPUT_READY", suggestedReview: "Compare direct evidence." }] };
+    const outcome = { valid: true, status: "NO_EVALUABLE_ITEMS", analyzedMismatchCount: 1, evaluableCount: 0,
+        notEvaluableCount: 1, tpFirstCount: 0, slFirstCount: 0, ambiguousCount: 0, entryNotReachedCount: 0,
+        openAtHorizonCount: 0, insufficientFutureDataCount: 0, outcomeItems: [] };
     const context = { document, window: { HNDStructureHistoricalMismatchAnalyzer: {
             analyzeReplay() { return clone(analysis); }, exportAnalysis() { return "{}"; } } }, activeTrade: null,
         console: { log() {}, warn() {}, error() {} }, Blob: function () {},
         URL: { createObjectURL() { return "blob:test"; }, revokeObjectURL() {} }, Date };
+    if (options.outcomeDependency !== false) context.window.HNDStructureHistoricalMismatchOutcomeAnalyzer = {
+        analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } };
     vm.runInNewContext(uiCode, context);
     return { context, elements, listenerCount(id) { return (listeners.get(`${id}:click`) || []).length; },
         setReplay(value) { vm.runInNewContext(`lastStructureHistoricalShadowReplay = ${JSON.stringify(value)}`, context); },
-        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls()", context); } };
+        setOutcomeInputs() { vm.runInNewContext(`lastStructureHistoricalShadowReplay = ${JSON.stringify({schemaVersion:"HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1"})}; lastStructureHistoricalMismatchAnalysis = ${JSON.stringify(analysis)}; lastStructureHistoricalShadowReplayCandles = [];`, context); },
+        installOutcomeDependency() { context.window.HNDStructureHistoricalMismatchOutcomeAnalyzer = {
+            analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } }; },
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls();", context); } };
 }
 
 function candles() {
@@ -294,6 +309,51 @@ test("historical mismatch analyze binds without export button", () => {
     const fixture = loadHistoricalMismatchUI({ export: false }); fixture.setReplay({ schemaVersion: "HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1" });
     assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatch"), 1);
     assert.doesNotThrow(() => fixture.elements.analyzeHistoricalMismatch.click());
+});
+
+test("historical outcome buttons bind exactly one listener", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setup(); fixture.setup();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatchOutcomes"), 1);
+    assert.strictEqual(fixture.listenerCount("exportHistoricalMismatchOutcomes"), 1);
+});
+
+test("historical outcome uses exact real HTML button IDs", () => {
+    assert.match(html, /id="analyzeHistoricalMismatchOutcomes"/);
+    assert.match(html, /id="exportHistoricalMismatchOutcomes"/);
+    assert.match(uiCode, /getElementById\("analyzeHistoricalMismatchOutcomes"\)/);
+    assert.match(uiCode, /getElementById\("exportHistoricalMismatchOutcomes"\)/);
+});
+
+test("historical outcome binds immediately while DOM reports loading", () => {
+    const fixture = loadHistoricalMismatchUI({ readyState: "loading" });
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatchOutcomes"), 1);
+    assert.strictEqual(fixture.listenerCount("exportHistoricalMismatchOutcomes"), 1);
+});
+
+test("historical outcome analyze updates UI", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setOutcomeInputs();
+    fixture.elements.analyzeHistoricalMismatchOutcomes.click();
+    assert.strictEqual(fixture.elements.historicalOutcomeStatus.textContent, "NO EVALUABLE ITEMS");
+    assert.strictEqual(fixture.elements.historicalOutcomeNotEvaluable.textContent, 1);
+});
+
+test("historical outcome dependency may load after listener setup", () => {
+    const fixture = loadHistoricalMismatchUI({ outcomeDependency: false }); fixture.setOutcomeInputs();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatchOutcomes"), 1);
+    fixture.installOutcomeDependency(); fixture.elements.analyzeHistoricalMismatchOutcomes.click();
+    assert.strictEqual(fixture.elements.historicalOutcomeStatus.textContent, "NO EVALUABLE ITEMS");
+});
+
+test("historical outcome export binds without analyze button", () => {
+    const fixture = loadHistoricalMismatchUI({ outcomeAnalyze: false });
+    assert.strictEqual(fixture.listenerCount("exportHistoricalMismatchOutcomes"), 1);
+    assert.doesNotThrow(() => fixture.elements.exportHistoricalMismatchOutcomes.click());
+});
+
+test("historical outcome analyze binds without export button", () => {
+    const fixture = loadHistoricalMismatchUI({ outcomeExport: false }); fixture.setOutcomeInputs();
+    assert.strictEqual(fixture.listenerCount("analyzeHistoricalMismatchOutcomes"), 1);
+    assert.doesNotThrow(() => fixture.elements.analyzeHistoricalMismatchOutcomes.click());
 });
 
 let passed = 0;
