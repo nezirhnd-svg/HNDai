@@ -599,6 +599,27 @@ TradeAI Pro
 <tbody id="historicalRrCapDetailBody"><tr><td colspan="10">No RR cap scenario items</td></tr></tbody></table></div>
 <p class="structure-shadow-safety">Retrospective comparison only; nine examples do not support a live RR policy recommendation or profitability claim.</p>
 </div>
+<div id="historicalRrCapCollection" class="structure-paper-readiness historical-rr-cap-collection collection-idle">
+<h3>HISTORICAL RR CAP EVIDENCE COLLECTION</h3>
+<p class="historical-rr-cap-safety">DIAGNOSTIC COLLECTION ONLY — DOES NOT CHANGE LIVE TP OR READINESS</p>
+<div class="structure-shadow-grid">
+<p>Status</p><strong id="historicalRrCapCollectionStatus">IDLE</strong><p>Split</p><strong id="historicalRrCapCollectionSplit">-</strong>
+<p>Completed Units</p><strong id="historicalRrCapCollectionUnits">0 / 0</strong><p>Exploratory Samples</p><strong id="historicalRrCapCollectionExploratory">0 / 300</strong>
+<p>OOS Samples</p><strong id="historicalRrCapCollectionOos">0 / 100</strong><p>Checkpoint Revision</p><strong id="historicalRrCapCollectionRevision">0</strong>
+<p>Live Readiness Contribution</p><strong id="historicalRrCapCollectionReadiness">NONE</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="createHistoricalRrCapCollection" type="button">Create Collection</button><button id="startHistoricalRrCapCollection" type="button">Start / Continue</button>
+<button id="pauseHistoricalRrCapCollection" type="button">Pause</button><button id="resumeHistoricalRrCapCollection" type="button">Resume</button>
+<button id="cancelHistoricalRrCapCollectionUnit" type="button">Cancel Current Unit</button><button id="exportHistoricalRrCapCollectionCheckpoint" type="button">Export Checkpoint</button>
+<button id="importHistoricalRrCapCollectionCheckpoint" type="button">Import Checkpoint</button><button id="exportHistoricalRrCapCollectionFinal" type="button">Export Final Report</button>
+<input id="historicalRrCapCollectionCheckpointFile" class="visually-hidden" type="file" accept=".json,application/json">
+</div>
+<p id="historicalRrCapCollectionWarning" class="structure-shadow-warning" aria-live="polite"></p>
+<div class="historical-rr-cap-table-wrap"><table><thead><tr><th>Split</th><th>Market</th><th>TF</th><th>Independent Samples</th><th>Minimum Met</th></tr></thead>
+<tbody id="historicalRrCapCollectionCoverageBody"><tr><td colspan="5">No collection checkpoint</td></tr></tbody></table></div>
+<p class="structure-shadow-safety">Immutable periods: Exploratory 2022-01-01–2024-12-31; OOS 2025-01-01–2026-06-30. Raw candles are not persisted.</p>
+</div>
 </div>
 
 <div class="card paper-trade-card">
@@ -735,7 +756,9 @@ TradeAI Pro
 <script src="js/hndai-v1/structureHistoricalMismatchAnalyzer.js"></script>
 <script src="js/hndai-v1/structureHistoricalMismatchOutcomeAnalyzer.js"></script>
 <script src="js/hndai-v1/structureHistoricalRrCapScenarioAnalyzer.js"></script>
-<script src="js/ui.js?v=6"></script>
+<script src="js/hndai-v1/structureHistoricalRrCapEvidenceCollection.js"></script>
+<script src="js/hndai-v1/structureHistoricalRrCapEvidenceCollectionController.js"></script>
+<script src="js/ui.js?v=7"></script>
 <script src="js/tradePlanEngine.js"></script>
 <script src="js/hndai-v1/structureHistoricalPlanEvidence.js"></script>
 <script src="js/backtestBenchmark.js"></script>

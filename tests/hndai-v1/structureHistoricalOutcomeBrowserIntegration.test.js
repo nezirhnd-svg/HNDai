@@ -19,7 +19,7 @@ async function openPage(browser, baseUrl) { const page = await browser.newPage()
             return original.call(this, type, listener, options); }; });
     await page.goto(`${baseUrl}/index.html`, { waitUntil: "load" }); return page; }
 let page;
-test("actual served ui asset version is deterministic", async () => assert.match(fs.readFileSync(path.join(root,"index.html"),"utf8"),/<script src="js\/ui\.js\?v=6"><\/script>/));
+test("actual served ui asset version is deterministic", async () => assert.match(fs.readFileSync(path.join(root,"index.html"),"utf8"),/<script src="js\/ui\.js\?v=7"><\/script>/));
 test("historical plan evidence browser dependency loads", async () => assert.strictEqual(await page.evaluate(() =>
     typeof window.HNDStructureHistoricalPlanEvidence?.buildPlanEvidence), "function"));
 test("historical RR cap browser dependency loads after authoritative outcome analyzer", async () => {
@@ -82,7 +82,20 @@ test("real RR cap click renders five scenarios, exports JSON, and isolates criti
 test("RR cap script order is outcome analyzer then scenario analyzer then UI", async () => {
     const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
     assert.ok(html.indexOf("structureHistoricalMismatchOutcomeAnalyzer.js")<html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js"));
-    assert.ok(html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js")<html.indexOf("js/ui.js?v=6")); });
+    assert.ok(html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js")<html.indexOf("structureHistoricalRrCapEvidenceCollection.js"));
+    assert.ok(html.indexOf("structureHistoricalRrCapEvidenceCollection.js")<html.indexOf("structureHistoricalRrCapEvidenceCollectionController.js"));
+    assert.ok(html.indexOf("structureHistoricalRrCapEvidenceCollectionController.js")<html.indexOf("js/ui.js?v=7")); });
+test("collection lifecycle binds each control once", async()=>{const counts=await page.evaluate(()=>window.__hndListenerCounts);
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit","exportHistoricalRrCapCollectionCheckpoint",
+        "importHistoricalRrCapCollectionCheckpoint","exportHistoricalRrCapCollectionFinal"].forEach(id=>assert.strictEqual(counts[`${id}:click`],1));});
+test("create persists safe checkpoint and reload resumes without network", async()=>{const criticalBefore=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));
+    await page.locator("#createHistoricalRrCapCollection").click();await page.waitForFunction(()=>document.querySelector("#historicalRrCapCollectionStatus")?.textContent==="READY");
+    const stored=await page.evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open("HNDaiHistoricalRrCapEvidenceCollectionV1");request.onsuccess=()=>{const db=request.result,get=db.transaction(["manifests"],"readonly").objectStore("manifests").get("active");get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);};request.onerror=()=>reject(request.error);}));
+    assert.strictEqual(stored.countsTowardLiveReadiness,false);assert.strictEqual(stored.readiness,"NONE");assert.ok(!JSON.stringify(stored).includes("rawCandles"));
+    await page.reload({waitUntil:"load"});await page.waitForFunction(()=>document.querySelector("#historicalRrCapCollectionRevision")?.textContent==="0");
+    assert.strictEqual(await page.locator("#historicalRrCapCollectionReadiness").textContent(),"NONE");
+    const criticalAfter=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));assert.strictEqual(criticalAfter,criticalBefore);});
 (async()=>{const own=process.env.HND_TEST_BASE_URL?null:await localServer(),base=process.env.HND_TEST_BASE_URL||own.url;
     const browser=await chromium.launch({headless:true,executablePath:chromePath()}); let assertions=0;
     try{page=await openPage(browser,base);for(const item of tests){try{await item.fn();assertions+=1;}catch(error){console.error(`FAIL:${item.name}`);throw error;}}

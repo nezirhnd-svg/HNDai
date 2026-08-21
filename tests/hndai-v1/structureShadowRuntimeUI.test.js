@@ -100,6 +100,10 @@ function loadHistoricalMismatchUI(options = {}) {
     if (options.outcomeExport !== false) elements.exportHistoricalMismatchOutcomes = element("exportHistoricalMismatchOutcomes");
     if (options.rrCapAnalyze !== false) elements.analyzeHistoricalRrCapScenarios = element("analyzeHistoricalRrCapScenarios");
     if (options.rrCapExport !== false) elements.exportHistoricalRrCapScenarios = element("exportHistoricalRrCapScenarios");
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => { elements[id] = element(id); });
     const document = { readyState: options.readyState || "complete", body: element("body"),
         getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
     const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
@@ -133,7 +137,7 @@ function loadHistoricalMismatchUI(options = {}) {
             analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } }; },
         installRrCapDependency() { context.window.HNDStructureHistoricalRrCapScenarioAnalyzer = {
             analyzeScenarios() { return clone(rrCap); }, exportScenarioAnalysis() { return "{}"; } }; },
-        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls();", context); } };
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls(); setupStructureHistoricalRrCapCollectionControls();", context); } };
 }
 
 function candles() {
@@ -422,6 +426,30 @@ test("historical RR cap analyze binds without export button", () => {
 
 test("historical RR cap export filename is deterministic", () => {
     assert.match(uiCode, /HNDai-historical-rr-cap-scenarios-/);
+});
+
+test("historical collection IDs, safety, immutable periods and readiness NONE are present", () => {
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => assert.match(html, new RegExp(`id="${id}"`)));
+    assert.match(html, /DIAGNOSTIC COLLECTION ONLY — DOES NOT CHANGE LIVE TP OR READINESS/);
+    assert.match(html, /id="historicalRrCapCollectionReadiness">NONE/);
+    assert.match(html, /Exploratory 2022-01-01–2024-12-31; OOS 2025-01-01–2026-06-30/);
+});
+
+test("historical collection listeners are idempotent and independent", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setup(); fixture.setup();
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => assert.strictEqual(fixture.listenerCount(id), 1));
+});
+
+test("collection storage namespace is isolated and raw candles are forbidden", () => {
+    assert.match(uiCode, /HNDaiHistoricalRrCapEvidenceCollectionV1/);
+    assert.match(uiCode, /RAW_CANDLE_PERSISTENCE_FORBIDDEN/);
+    assert.ok(!uiCode.includes("localStorage.setItem(\"HNDaiHistoricalRrCapEvidenceCollectionV1"));
 });
 
 let passed = 0;
