@@ -104,6 +104,12 @@ function loadHistoricalMismatchUI(options = {}) {
         "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
         "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
         "exportHistoricalRrCapCollectionFinal"].forEach(id => { elements[id] = element(id); });
+    ["historicalRrCapPilotMode","historicalRrCapPilotSplit","historicalRrCapPilotLimit","historicalRrCapPilotStatus",
+        "historicalRrCapPilotUnits","historicalRrCapPilotRevision","historicalRrCapPilotReadiness","historicalRrCapPilotWarning",
+        "historicalRrCapBoundedPilot","historicalRrCapPilotSymbol","historicalRrCapPilotInterval",
+        "createHistoricalRrCapPilot","startHistoricalRrCapPilot","pauseHistoricalRrCapPilot","resumeHistoricalRrCapPilot",
+        "cancelHistoricalRrCapPilotUnit","exportHistoricalRrCapPilotCheckpoint"].forEach(id => { elements[id] = element(id); });
+    elements.historicalRrCapPilotSymbol.value="BTCUSDT";elements.historicalRrCapPilotInterval.value="4h";
     const document = { readyState: options.readyState || "complete", body: element("body"),
         getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
     const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
@@ -137,7 +143,7 @@ function loadHistoricalMismatchUI(options = {}) {
             analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } }; },
         installRrCapDependency() { context.window.HNDStructureHistoricalRrCapScenarioAnalyzer = {
             analyzeScenarios() { return clone(rrCap); }, exportScenarioAnalysis() { return "{}"; } }; },
-        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls(); setupStructureHistoricalRrCapCollectionControls();", context); } };
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls(); setupStructureHistoricalRrCapCollectionControls(); setupStructureHistoricalRrCapPilotControls();", context); } };
 }
 
 function candles() {
@@ -450,6 +456,22 @@ test("collection storage namespace is isolated and raw candles are forbidden", (
     assert.match(uiCode, /HNDaiHistoricalRrCapEvidenceCollectionV1/);
     assert.match(uiCode, /RAW_CANDLE_PERSISTENCE_FORBIDDEN/);
     assert.ok(!uiCode.includes("localStorage.setItem(\"HNDaiHistoricalRrCapEvidenceCollectionV1"));
+});
+
+test("bounded pilot UI has authorized selectors and immutable one-unit exploratory labels",()=>{
+    assert.match(html,/BOUNDED PILOT — 1 UNIT ONLY/);assert.match(html,/PILOT ONLY — NOT PART OF FULL COLLECTION — DOES NOT CHANGE LIVE TP OR READINESS/);
+    assert.match(html,/id="historicalRrCapPilotSplit">EXPLORATORY/);assert.match(html,/id="historicalRrCapPilotLimit">1/);
+    assert.match(html,/id="historicalRrCapPilotReadiness">NONE/);
+    ["BTCUSDT","ETHUSDT","SOLUSDT","15m","4h"].forEach(value=>assert.match(html,new RegExp(`<option>${value}</option>`)));
+});
+
+test("bounded pilot listeners are idempotent",()=>{const fixture=loadHistoricalMismatchUI();fixture.setup();fixture.setup();
+    ["createHistoricalRrCapPilot","startHistoricalRrCapPilot","pauseHistoricalRrCapPilot","resumeHistoricalRrCapPilot",
+        "cancelHistoricalRrCapPilotUnit","exportHistoricalRrCapPilotCheckpoint"].forEach(id=>assert.strictEqual(fixture.listenerCount(id),1));});
+
+test("pilot IndexedDB namespace and store key are separate from full collection",()=>{
+    assert.match(uiCode,/HNDaiHistoricalRrCapBoundedPilotV1/);assert.match(uiCode,/manifestKey:"activePilot"/);
+    assert.match(uiCode,/mode:"PILOT_ONLY"/);assert.match(uiCode,/maximumCompletedUnits:1/);
 });
 
 let passed = 0;

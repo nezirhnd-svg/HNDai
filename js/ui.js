@@ -29,6 +29,10 @@ let lastStructureHistoricalRrCapScenarioAnalysis = null;
 let structureHistoricalRrCapCollectionButtons = new Map();
 let structureHistoricalRrCapCollectionController = null;
 let lastStructureHistoricalRrCapCollectionSnapshot = null;
+let structureHistoricalRrCapPilotButtons = new Map();
+let structureHistoricalRrCapPilotController = null;
+let lastStructureHistoricalRrCapPilotSnapshot = null;
+let historicalRrCapPilotRunning = false;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -1055,8 +1059,9 @@ setupStructureHistoricalRrCapControls();
 if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", setupStructureHistoricalRrCapControls, { once: true });
 
-function createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb = window.indexedDB) {
-    const databaseName = "HNDaiHistoricalRrCapEvidenceCollectionV1";
+function createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb = window.indexedDB, options = {}) {
+    const databaseName = options.databaseName || "HNDaiHistoricalRrCapEvidenceCollectionV1";
+    const manifestKey = options.manifestKey || "active";
     const stores = ["manifests", "units", "dedup", "audit"];
     function open() { return new Promise((resolve, reject) => {
         if (!indexedDb) { reject(new Error("INDEXEDDB_UNAVAILABLE")); return; }
@@ -1067,7 +1072,7 @@ function createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb = window.inde
     }); }
     return {
         async load() { const database = await open(); return new Promise((resolve, reject) => {
-            const request = database.transaction(["manifests"], "readonly").objectStore("manifests").get("active");
+            const request = database.transaction(["manifests"], "readonly").objectStore("manifests").get(manifestKey);
             request.onsuccess = () => { database.close(); resolve(request.result ? JSON.parse(JSON.stringify(request.result)) : null); };
             request.onerror = () => { database.close(); reject(request.error || new Error("INDEXEDDB_READ_FAILED")); };
         }); },
@@ -1077,9 +1082,9 @@ function createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb = window.inde
                 const transaction = database.transaction(stores, "readwrite");
                 transaction.oncomplete = () => { database.close(); resolve(); };
                 transaction.onabort = transaction.onerror = () => { const error = transaction.error || new Error("INDEXEDDB_TRANSACTION_ABORTED"); database.close(); reject(error); };
-                stores.forEach(name => transaction.objectStore(name).clear()); transaction.objectStore("manifests").put(safe, "active");
+                stores.forEach(name => transaction.objectStore(name).clear()); transaction.objectStore("manifests").put(safe, manifestKey);
                 safe.units.forEach(unit => transaction.objectStore("units").put(unit, unit.unitId));
-                transaction.objectStore("dedup").put({ planIds:safe.planIds, eventIds:safe.eventIds, clusters:safe.clusters }, "active");
+                transaction.objectStore("dedup").put({ planIds:safe.planIds, eventIds:safe.eventIds, clusters:safe.clusters }, manifestKey);
                 safe.audit.forEach(item => transaction.objectStore("audit").put(item, item.sequence));
             }); return safe; },
         async clearRunning() { return undefined; }, databaseName
@@ -1125,6 +1130,7 @@ function downloadHistoricalRrCapCollectionJson(json, label) {
 }
 async function runHistoricalRrCapCollection(action) { const controller=getHistoricalRrCapCollectionController();
     if(!controller){updateHistoricalRrCapCollectionUI(null,"Collection dependency unavailable.");return;}
+    if(historicalRrCapPilotRunning){updateHistoricalRrCapCollectionUI(controller.getSnapshot(),"Full Collection cannot start while the bounded pilot is running.");return;}
     try { const result=await controller[action]();lastStructureHistoricalRrCapCollectionSnapshot=result;updateHistoricalRrCapCollectionUI(result); }
     catch(error){updateHistoricalRrCapCollectionUI(controller.getSnapshot(),"Collection failed closed.");} }
 function setupStructureHistoricalRrCapCollectionControls() {
@@ -1145,6 +1151,70 @@ window.createHistoricalRrCapCollectionIndexedDbAdapter=createHistoricalRrCapColl
 setupStructureHistoricalRrCapCollectionControls();
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",async()=>{setupStructureHistoricalRrCapCollectionControls();const controller=getHistoricalRrCapCollectionController();
     if(controller){try{const restored=await controller.restore();if(restored.checkpoint){lastStructureHistoricalRrCapCollectionSnapshot=restored;updateHistoricalRrCapCollectionUI(restored);}}catch(error){updateHistoricalRrCapCollectionUI(null,"Stored checkpoint rejected.");}}},{once:true});
+
+function createHistoricalRrCapPilotIndexedDbAdapter(indexedDb = window.indexedDB) {
+    return createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb, {
+        databaseName:"HNDaiHistoricalRrCapBoundedPilotV1", manifestKey:"activePilot"
+    });
+}
+function getHistoricalRrCapPilotController() {
+    if (structureHistoricalRrCapPilotController) return structureHistoricalRrCapPilotController;
+    const factory=window.HNDStructureHistoricalRrCapEvidenceCollectionController;
+    if(!factory?.createController)return null;
+    structureHistoricalRrCapPilotController=factory.createController({store:createHistoricalRrCapPilotIndexedDbAdapter()});
+    return structureHistoricalRrCapPilotController;
+}
+function updateHistoricalRrCapPilotUI(snapshot=null,warning="") {
+    const value=snapshot||{},checkpoint=value.checkpoint||{},state=value.state||"IDLE";
+    setText("historicalRrCapPilotStatus",state.replaceAll("_"," "));
+    setText("historicalRrCapPilotUnits",`${value.progress?.completedUnits||0} / 1`);
+    setText("historicalRrCapPilotRevision",checkpoint.revision||0);
+    setText("historicalRrCapPilotReadiness","NONE");
+    setText("historicalRrCapPilotWarning",warning||value.error||"");
+    const section=document.getElementById("historicalRrCapBoundedPilot");
+    section?.classList?.forEach?.(name=>{if(name.startsWith("pilot-"))section.classList.remove(name);});
+    section?.classList?.add(`pilot-${state.toLowerCase().replaceAll("_","-")}`);
+    const locked=checkpoint.mode==="PILOT_ONLY";
+    const symbol=document.getElementById("historicalRrCapPilotSymbol"),interval=document.getElementById("historicalRrCapPilotInterval");
+    if(symbol){if(checkpoint.pilotConfig?.symbol)symbol.value=checkpoint.pilotConfig.symbol;symbol.disabled=locked;}
+    if(interval){if(checkpoint.pilotConfig?.interval)interval.value=checkpoint.pilotConfig.interval;interval.disabled=locked;}
+}
+async function createHistoricalRrCapPilotFromUI() {
+    const controller=getHistoricalRrCapPilotController();if(!controller)return;
+    const fullState=getHistoricalRrCapCollectionController()?.getSnapshot?.().state;
+    if(["RUNNING","OOS_RUNNING","PAUSING"].includes(fullState)){updateHistoricalRrCapPilotUI(null,"Pilot cannot be created while Full Collection is running.");return;}
+    const config={mode:"PILOT_ONLY",symbol:document.getElementById("historicalRrCapPilotSymbol")?.value,
+        interval:document.getElementById("historicalRrCapPilotInterval")?.value,split:"EXPLORATORY",maximumCompletedUnits:1};
+    try{const result=await controller.createPilot(config);lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);}
+    catch(error){updateHistoricalRrCapPilotUI(controller.getPilotSnapshot(),"Pilot creation failed closed.");}
+}
+async function runHistoricalRrCapPilot(action) {
+    const controller=getHistoricalRrCapPilotController();if(!controller)return;
+    const fullState=getHistoricalRrCapCollectionController()?.getSnapshot?.().state;
+    if(["RUNNING","OOS_RUNNING","PAUSING"].includes(fullState)){updateHistoricalRrCapPilotUI(lastStructureHistoricalRrCapPilotSnapshot,"Pilot cannot start while Full Collection is running.");return;}
+    historicalRrCapPilotRunning=true;
+    try{const result=await controller[action]();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);}
+    catch(error){updateHistoricalRrCapPilotUI(controller.getPilotSnapshot(),"Pilot failed closed.");}
+    finally{historicalRrCapPilotRunning=false;}
+}
+function exportHistoricalRrCapPilotCheckpoint() {
+    const json=window.HNDStructureHistoricalRrCapEvidenceCollection?.exportPilotCheckpoint?.(lastStructureHistoricalRrCapPilotSnapshot?.checkpoint);
+    if(typeof json!=="string"){updateHistoricalRrCapPilotUI(lastStructureHistoricalRrCapPilotSnapshot,"Pilot checkpoint export unavailable.");return;}
+    const blob=new Blob([json],{type:"application/json;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=`HNDai-historical-rr-cap-bounded-pilot-${new Date().toISOString().slice(0,10)}.json`;
+    document.body?.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
+function setupStructureHistoricalRrCapPilotControls() {
+    const handlers={createHistoricalRrCapPilot:createHistoricalRrCapPilotFromUI,startHistoricalRrCapPilot:()=>runHistoricalRrCapPilot("startPilot"),
+        pauseHistoricalRrCapPilot:()=>{const result=getHistoricalRrCapPilotController()?.pausePilot();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);},
+        resumeHistoricalRrCapPilot:()=>runHistoricalRrCapPilot("resumePilot"),cancelHistoricalRrCapPilotUnit:()=>{const result=getHistoricalRrCapPilotController()?.cancelPilotUnit();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);},
+        exportHistoricalRrCapPilotCheckpoint:exportHistoricalRrCapPilotCheckpoint};
+    Object.keys(handlers).forEach(id=>{const button=document.getElementById(id);if(button&&structureHistoricalRrCapPilotButtons.get(id)!==button){button.addEventListener("click",handlers[id]);structureHistoricalRrCapPilotButtons.set(id,button);}});
+}
+window.createHistoricalRrCapPilotIndexedDbAdapter=createHistoricalRrCapPilotIndexedDbAdapter;
+setupStructureHistoricalRrCapPilotControls();
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",async()=>{setupStructureHistoricalRrCapPilotControls();const controller=getHistoricalRrCapPilotController();
+    if(controller){try{const restored=await controller.restorePilot();if(restored.checkpoint){lastStructureHistoricalRrCapPilotSnapshot=restored;updateHistoricalRrCapPilotUI(restored);}}catch(error){updateHistoricalRrCapPilotUI(null,"Stored pilot checkpoint rejected.");}}},{once:true});
 
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
@@ -1331,6 +1401,7 @@ function updateUI(
     setupStructureHistoricalOutcomeControls();
     setupStructureHistoricalRrCapControls();
     setupStructureHistoricalRrCapCollectionControls();
+    setupStructureHistoricalRrCapPilotControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -1379,3 +1450,4 @@ setupStructureHistoricalMismatchControls();
 setupStructureHistoricalOutcomeControls();
 setupStructureHistoricalRrCapControls();
 setupStructureHistoricalRrCapCollectionControls();
+setupStructureHistoricalRrCapPilotControls();

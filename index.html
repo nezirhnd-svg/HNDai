@@ -620,6 +620,28 @@ TradeAI Pro
 <tbody id="historicalRrCapCollectionCoverageBody"><tr><td colspan="5">No collection checkpoint</td></tr></tbody></table></div>
 <p class="structure-shadow-safety">Immutable periods: Exploratory 2022-01-01–2024-12-31; OOS 2025-01-01–2026-06-30. Raw candles are not persisted.</p>
 </div>
+<div id="historicalRrCapBoundedPilot" class="structure-paper-readiness historical-rr-cap-pilot pilot-idle">
+<h3>BOUNDED PILOT — 1 UNIT ONLY</h3>
+<p class="historical-rr-cap-safety">PILOT ONLY — NOT PART OF FULL COLLECTION — DOES NOT CHANGE LIVE TP OR READINESS</p>
+<div class="historical-shadow-replay-selectors">
+<label for="historicalRrCapPilotSymbol">Market</label>
+<select id="historicalRrCapPilotSymbol"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option></select>
+<label for="historicalRrCapPilotInterval">Timeframe</label>
+<select id="historicalRrCapPilotInterval"><option>15m</option><option>4h</option></select>
+</div>
+<div class="structure-shadow-grid">
+<p>Mode</p><strong id="historicalRrCapPilotMode">PILOT_ONLY</strong><p>Split</p><strong id="historicalRrCapPilotSplit">EXPLORATORY</strong>
+<p>Maximum Units</p><strong id="historicalRrCapPilotLimit">1</strong><p>Status</p><strong id="historicalRrCapPilotStatus">IDLE</strong>
+<p>Completed Units</p><strong id="historicalRrCapPilotUnits">0 / 1</strong><p>Checkpoint Revision</p><strong id="historicalRrCapPilotRevision">0</strong>
+<p>Live Readiness Contribution</p><strong id="historicalRrCapPilotReadiness">NONE</strong>
+</div>
+<div class="structure-shadow-actions">
+<button id="createHistoricalRrCapPilot" type="button">Create Pilot</button><button id="startHistoricalRrCapPilot" type="button">Start Pilot</button>
+<button id="pauseHistoricalRrCapPilot" type="button">Pause Pilot</button><button id="resumeHistoricalRrCapPilot" type="button">Resume Pilot</button>
+<button id="cancelHistoricalRrCapPilotUnit" type="button">Cancel Pilot Unit</button><button id="exportHistoricalRrCapPilotCheckpoint" type="button">Export Pilot Checkpoint</button>
+</div>
+<p id="historicalRrCapPilotWarning" class="structure-shadow-warning" aria-live="polite"></p>
+</div>
 </div>
 
 <div class="card paper-trade-card">

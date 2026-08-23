@@ -16,7 +16,7 @@ function advanceTo(unitPredicate, rowsFactory) { let cp = api.createManifest(), 
         const result = api.ingestWorkUnit(cp, evidence(unit, rowsFactory ? rowsFactory(unit) : [])); assert.strictEqual(result.valid, true); cp = result.checkpoint;
     } return { cp, unit }; }
 test("exact API and safety vocabulary", () => { assert.strictEqual(api.getSchemaVersion(), "HND_STRUCTURE_HISTORICAL_RR_CAP_EVIDENCE_COLLECTION_V1");
-    assert.deepStrictEqual(Object.keys(api).sort(), ["getSchemaVersion","getVocabulary","getDefaultConfig","createManifest","validateCheckpoint","getNextWorkUnit","ingestWorkUnit","lockExploratory","aggregateCollection","finalizeCollection","exportCheckpoint","exportCollection"].sort());
+    assert.deepStrictEqual(Object.keys(api).sort(), ["getSchemaVersion","getVocabulary","getDefaultConfig","createManifest","validateCheckpoint","getNextWorkUnit","ingestWorkUnit","lockExploratory","aggregateCollection","finalizeCollection","exportCheckpoint","exportCollection","createPilotManifest","validatePilotCheckpoint","getPilotWorkUnit","ingestPilotWorkUnit","exportPilotCheckpoint"].sort());
     assert.deepStrictEqual(api.getVocabulary().outcomes, ["TP_FIRST","SL_FIRST","AMBIGUOUS_SAME_BAR","ENTRY_NOT_REACHED","OPEN_AT_HORIZON","INSUFFICIENT_FUTURE_DATA","NOT_EVALUABLE"]); });
 test("immutable periods and six matrix cells", () => { const config = api.getDefaultConfig(); assert.deepStrictEqual(config.markets, ["BTCUSDT","ETHUSDT","SOLUSDT"]); assert.deepStrictEqual(config.intervals, ["15m","4h"]);
     assert.deepStrictEqual(config.splits, { exploratory:{start:1640995200000,end:1735689599999},oos:{start:1735689600000,end:1782863999999} });
@@ -51,5 +51,23 @@ test("checkpoint unknown fields and corruption fail closed", () => { const cp = 
 test("exports are whitelist, raw candles absent, readiness NONE", () => { const cp = api.createManifest(); const json = api.exportCheckpoint(cp); assert.ok(!json.includes("rawCandles")); assert.strictEqual(JSON.parse(json).readiness, "NONE");
     const locked = api.lockExploratory(advanceTo(x => x.split === "OOS").cp), result = api.finalizeCollection(locked), exported = JSON.parse(api.exportCollection(result));
     assert.deepStrictEqual(Object.keys(exported).sort(), ["schemaVersion","source","sourceSha","countsTowardLiveReadiness","readiness","status","configHash","checkpointHash","aggregate","disclaimer"].sort()); });
+test("full collection config and hashes retain exact PR head parity", () => { const manifest=api.createManifest();
+    assert.strictEqual(manifest.configHash,"c5412a936cbb938989a2504a5247ce6ed27f66c7e2df8d67cce4a4c0e838a560");
+    assert.strictEqual(manifest.checkpointHash,"b817ed79753fbf26d4a6ca103eac315c840fc5f772d0e1c625415224aaa1812b");
+    assert.strictEqual(manifest.workUnits.length,54); assert.strictEqual(manifest.config.sessionUnitLimit,6); });
+test("pilot accepts every authorized single cell and remains exploratory one-unit only", () => {
+    ["BTCUSDT","ETHUSDT","SOLUSDT"].forEach(symbol=>["15m","4h"].forEach(interval=>{const pilot=api.createPilotManifest({mode:"PILOT_ONLY",symbol,interval,split:"EXPLORATORY",maximumCompletedUnits:1});
+        assert.ok(pilot);assert.strictEqual(pilot.workUnit.symbol,symbol);assert.strictEqual(pilot.workUnit.interval,interval);assert.strictEqual(pilot.workUnit.split,"EXPLORATORY");assert.strictEqual(pilot.storageNamespace,"HNDaiHistoricalRrCapBoundedPilotV1");})); });
+test("pilot rejects OOS invalid limits unknown mode and multi-cell values", () => { const base={mode:"PILOT_ONLY",symbol:"BTCUSDT",interval:"4h",split:"EXPLORATORY",maximumCompletedUnits:1};
+    [{...base,split:"OOS"},{...base,maximumCompletedUnits:0},{...base,maximumCompletedUnits:2},{...base,maximumCompletedUnits:Infinity},{...base,mode:"FULL_COLLECTION"},{...base,symbol:["BTCUSDT","ETHUSDT"]},{...base,interval:["15m","4h"]}]
+        .forEach(value=>assert.strictEqual(api.createPilotManifest(value),null)); });
+test("full and pilot checkpoints reject cross-import", () => { const full=api.createManifest(),pilot=api.createPilotManifest({mode:"PILOT_ONLY",symbol:"BTCUSDT",interval:"4h",split:"EXPLORATORY",maximumCompletedUnits:1});
+    assert.strictEqual(api.validateCheckpoint(pilot).valid,false);assert.strictEqual(api.validatePilotCheckpoint(full).valid,false);
+    assert.strictEqual(api.exportCheckpoint(pilot),null);assert.strictEqual(api.exportPilotCheckpoint(full),null); });
+test("pilot commits exactly one unit then terminally pauses", () => { let pilot=api.createPilotManifest({mode:"PILOT_ONLY",symbol:"BTCUSDT",interval:"4h",split:"EXPLORATORY",maximumCompletedUnits:1}),unit=api.getPilotWorkUnit(pilot);
+    const rows=scenario("PILOT",unit.evaluationStart).map(row=>({...row,symbol:"BTCUSDT",interval:"4h"}));const result=api.ingestPilotWorkUnit(pilot,evidence(unit,rows));
+    assert.strictEqual(result.valid,true);pilot=result.checkpoint;assert.strictEqual(pilot.state,"PILOT_COMPLETED_PAUSED");assert.strictEqual(pilot.cursor,1);assert.strictEqual(api.getPilotWorkUnit(pilot),null);
+    assert.strictEqual(api.ingestPilotWorkUnit(pilot,evidence(unit,rows)).valid,false);const exported=JSON.parse(api.exportPilotCheckpoint(pilot));
+    assert.strictEqual(exported.exportSchemaVersion,"HND_STRUCTURE_HISTORICAL_RR_CAP_BOUNDED_PILOT_EXPORT_V1");assert.strictEqual(exported.mode,"PILOT_ONLY");assert.strictEqual(exported.readiness,"NONE"); });
 let passed = 0; for (const item of tests) { try { item.fn(); passed += 1; console.log("PASS:" + item.name); } catch (error) { console.error("FAIL:" + item.name); console.error(error.stack); process.exitCode = 1; break; } }
 if (passed === tests.length) console.log("HND_STRUCTURE_HISTORICAL_RR_CAP_EVIDENCE_COLLECTION_TESTS_PASS:" + passed);

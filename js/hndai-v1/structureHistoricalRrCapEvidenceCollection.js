@@ -6,9 +6,12 @@
 }(typeof window !== "undefined" ? window : null, function () {
     "use strict";
     var SCHEMA = "HND_STRUCTURE_HISTORICAL_RR_CAP_EVIDENCE_COLLECTION_V1";
+    var PILOT_SCHEMA = "HND_STRUCTURE_HISTORICAL_RR_CAP_BOUNDED_PILOT_V1";
+    var PILOT_EXPORT_SCHEMA = "HND_STRUCTURE_HISTORICAL_RR_CAP_BOUNDED_PILOT_EXPORT_V1";
     var SOURCE = "HISTORICAL_REPLAY";
     var SOURCE_SHA = "166c88bb22be55941eae62ce6f788e68e680b5eb";
     var DISCLAIMER = "DIAGNOSTIC COLLECTION ONLY — DOES NOT CHANGE LIVE TP OR READINESS.";
+    var PILOT_DISCLAIMER = "PILOT ONLY — NOT PART OF FULL COLLECTION — DOES NOT CHANGE LIVE TP OR READINESS";
     var OUTCOMES = ["TP_FIRST", "SL_FIRST", "AMBIGUOUS_SAME_BAR", "ENTRY_NOT_REACHED",
         "OPEN_AT_HORIZON", "INSUFFICIENT_FUTURE_DATA", "NOT_EVALUABLE"];
     var SCENARIOS = ["ORIGINAL_UNCAPPED", "MAX_2R", "MAX_3R", "MAX_4R", "MAX_5R"];
@@ -161,8 +164,103 @@
     function exportCheckpoint(checkpoint) { return validateCheckpoint(checkpoint).valid ? JSON.stringify(clone(checkpoint), null, 2) : null; }
     function exportCollection(result) { if (!result || result.valid !== true || !["COMPLETED", "TARGET_NOT_MET"].includes(result.status) || result.source !== SOURCE || result.countsTowardLiveReadiness !== false || result.readiness !== "NONE") return null;
         var fields = ["schemaVersion", "source", "sourceSha", "countsTowardLiveReadiness", "readiness", "status", "configHash", "checkpointHash", "aggregate", "disclaimer"], safe = {}; fields.forEach(function (field) { safe[field] = clone(result[field]); }); return JSON.stringify(safe, null, 2); }
+    function pilotConfigError(config) {
+        if (!exact(config, ["mode", "symbol", "interval", "split", "maximumCompletedUnits"]) ||
+            config.mode !== "PILOT_ONLY" || !["BTCUSDT", "ETHUSDT", "SOLUSDT"].includes(config.symbol) ||
+            !["15m", "4h"].includes(config.interval) || config.split !== "EXPLORATORY" ||
+            config.maximumCompletedUnits !== 1) return "INVALID_PILOT_CONFIG";
+        return null;
+    }
+    function pilotCheckpointHash(value) { var safe = clone(value); delete safe.pilotCheckpointHash; return sha256(canonical(safe)); }
+    function createPilotManifest(config) {
+        var cfg = clone(config), error = pilotConfigError(cfg); if (error) return null;
+        var fullConfig = getDefaultConfig(), unit = workUnits(fullConfig).find(function (candidate) {
+            return candidate.split === "EXPLORATORY" && candidate.symbol === cfg.symbol && candidate.interval === cfg.interval;
+        });
+        if (!unit) return null;
+        unit = clone(unit); unit.id = "PILOT_ONLY|" + cfg.symbol + "|" + cfg.interval + "|0"; unit.sequence = 0;
+        var configHash = sha256(canonical(cfg)), checkpoint = { schemaVersion: PILOT_SCHEMA, mode: "PILOT_ONLY",
+            collectionId: "PILOT_ONLY-" + configHash.slice(0, 24), storageNamespace: "HNDaiHistoricalRrCapBoundedPilotV1",
+            source: SOURCE, sourceSha: SOURCE_SHA, countsTowardLiveReadiness: false, readiness: "NONE",
+            disclaimer: PILOT_DISCLAIMER, pilotConfig: cfg, pilotConfigHash: configHash,
+            dependencySchemas: clone(DEPENDENCY_SCHEMAS), state: "PILOT_READY", revision: 0, cursor: 0,
+            previousPilotCheckpointHash: null, units: [], workUnit: unit, planIds: [], eventIds: [],
+            clusters: [], exclusions: [], audit: [] };
+        checkpoint.pilotCheckpointHash = pilotCheckpointHash(checkpoint); return clone(checkpoint);
+    }
+    function validatePilotCheckpoint(value) {
+        var fields = ["schemaVersion", "mode", "collectionId", "storageNamespace", "source", "sourceSha",
+            "countsTowardLiveReadiness", "readiness", "disclaimer", "pilotConfig", "pilotConfigHash",
+            "dependencySchemas", "state", "revision", "cursor", "previousPilotCheckpointHash", "units",
+            "workUnit", "planIds", "eventIds", "clusters", "exclusions", "audit", "pilotCheckpointHash"];
+        if (!exact(value, fields) || value.schemaVersion !== PILOT_SCHEMA || value.mode !== "PILOT_ONLY" ||
+            value.storageNamespace !== "HNDaiHistoricalRrCapBoundedPilotV1" || value.source !== SOURCE ||
+            value.sourceSha !== SOURCE_SHA || value.countsTowardLiveReadiness !== false || value.readiness !== "NONE" ||
+            value.disclaimer !== PILOT_DISCLAIMER || pilotConfigError(value.pilotConfig) ||
+            value.pilotConfigHash !== sha256(canonical(value.pilotConfig)) ||
+            value.collectionId !== "PILOT_ONLY-" + value.pilotConfigHash.slice(0, 24) ||
+            canonical(value.dependencySchemas) !== canonical(DEPENDENCY_SCHEMAS)) return { valid: false, error: "INVALID_PILOT_CHECKPOINT" };
+        var expected = createPilotManifest(value.pilotConfig);
+        if (!expected || canonical(value.workUnit) !== canonical(expected.workUnit) ||
+            !["PILOT_READY", "PILOT_RUNNING", "PILOT_PAUSED", "PILOT_PAUSED_RETRYABLE", "PILOT_COMPLETED_PAUSED", "PILOT_FAILED_CLOSED"].includes(value.state) ||
+            !Number.isSafeInteger(value.revision) || value.revision < 0 || ![0, 1].includes(value.cursor) ||
+            !Array.isArray(value.units) || value.units.length !== value.cursor || !Array.isArray(value.planIds) ||
+            !Array.isArray(value.eventIds) || !Array.isArray(value.clusters) || !Array.isArray(value.exclusions) ||
+            !Array.isArray(value.audit) || value.cursor === 1 && value.state !== "PILOT_COMPLETED_PAUSED" ||
+            value.pilotCheckpointHash !== pilotCheckpointHash(value)) return { valid: false, error: "PILOT_CHECKPOINT_INTEGRITY_FAILURE" };
+        return { valid: true, error: null };
+    }
+    function getPilotWorkUnit(checkpoint) {
+        var validation = validatePilotCheckpoint(checkpoint); if (!validation.valid || checkpoint.cursor !== 0 ||
+            checkpoint.state === "PILOT_COMPLETED_PAUSED") return null; return clone(checkpoint.workUnit);
+    }
+    function ingestPilotWorkUnit(checkpoint, unitEvidence) {
+        var validation = validatePilotCheckpoint(checkpoint); if (!validation.valid) return { valid: false, error: validation.error, checkpoint: null };
+        var unit = getPilotWorkUnit(checkpoint); if (!unit || !unitEvidence || unitEvidence.unitId !== unit.id ||
+            unitEvidence.source !== SOURCE || unitEvidence.countsTowardLiveReadiness !== false ||
+            unitEvidence.gridValid !== true || unitEvidence.rawCandles !== undefined)
+            return { valid: false, error: "INVALID_PILOT_UNIT_EVIDENCE", checkpoint: null };
+        var plans = normalizedPlans(unitEvidence.scenarioAnalysis, unit); if (!plans)
+            return { valid: false, error: "INVALID_PILOT_SCENARIO_EVIDENCE", checkpoint: null };
+        var next = clone(checkpoint), planSet = new Set(), eventSet = new Set(), accepted = [];
+        plans.sort(function (a, b) { return a.evaluationCloseTime - b.evaluationCloseTime || a.key.localeCompare(b.key); }).forEach(function (plan) {
+            var planId = identity(plan, false), eventId = identity(plan, true), end = plan.outcomeAt ||
+                plan.evaluationCloseTime + 24 * INTERVAL_MS[plan.interval];
+            var reason = planSet.has(planId) ? "DUPLICATE_PLAN" : eventSet.has(eventId) ? "DUPLICATE_EVENT" : null;
+            var overlaps = accepted.filter(function (entry) { return entry.cluster.symbol === plan.symbol &&
+                entry.cluster.start <= end && plan.evaluationCloseTime <= entry.cluster.end; });
+            if (!reason && overlaps.length) reason = "OVERLAPPING_EPISODE";
+            if (reason) { next.exclusions.push({ unitId: unit.id, key: plan.key, reason: reason }); return; }
+            var cluster = { symbol: plan.symbol, start: plan.evaluationCloseTime, end: end, planId: planId };
+            plan.planIdentity = planId; plan.eventIdentity = eventId; plan.cluster = cluster;
+            accepted.push(plan); planSet.add(planId); eventSet.add(eventId);
+        });
+        var stored = { unitId: unit.id, sequence: 0, split: "EXPLORATORY", symbol: unit.symbol,
+            interval: unit.interval, source: SOURCE, countsTowardLiveReadiness: false,
+            candleGrid: clone(unitEvidence.candleGrid), inputChecksum: unitEvidence.inputChecksum,
+            evidence: accepted.map(function (plan) { var output = clone(plan); delete output.cluster; return output; }),
+            outputChecksum: sha256(canonical(accepted)), metrics: { raw: plans.length,
+                evaluable: plans.filter(function (plan) { return !["NOT_EVALUABLE", "INSUFFICIENT_FUTURE_DATA"].includes(plan.scenarios[0].scenarioOutcome); }).length,
+                dedup: next.exclusions.filter(function (item) { return item.reason.indexOf("DUPLICATE_") === 0; }).length,
+                overlap: next.exclusions.filter(function (item) { return item.reason === "OVERLAPPING_EPISODE"; }).length,
+                independent: accepted.length } };
+        next.previousPilotCheckpointHash = next.pilotCheckpointHash; next.units.push(stored); next.cursor = 1;
+        next.revision += 1; next.planIds = Array.from(planSet).sort(); next.eventIds = Array.from(eventSet).sort();
+        next.clusters = accepted.map(function (entry) { return entry.cluster; }); next.state = "PILOT_COMPLETED_PAUSED";
+        next.audit.push({ sequence: next.audit.length, action: "PILOT_UNIT_COMMITTED_AND_PAUSED", unitId: unit.id });
+        next.pilotCheckpointHash = pilotCheckpointHash(next);
+        return { valid: true, error: null, checkpoint: clone(next), acceptedCount: accepted.length };
+    }
+    function exportPilotCheckpoint(checkpoint) {
+        if (!validatePilotCheckpoint(checkpoint).valid) return null;
+        var safe = clone(checkpoint); safe.exportSchemaVersion = PILOT_EXPORT_SCHEMA;
+        return JSON.stringify(safe, null, 2);
+    }
     return { getSchemaVersion: getSchemaVersion, getVocabulary: getVocabulary, getDefaultConfig: getDefaultConfig,
         createManifest: createManifest, validateCheckpoint: validateCheckpoint, getNextWorkUnit: getNextWorkUnit,
         ingestWorkUnit: ingestWorkUnit, lockExploratory: lockExploratory, aggregateCollection: aggregateCollection,
-        finalizeCollection: finalizeCollection, exportCheckpoint: exportCheckpoint, exportCollection: exportCollection };
+        finalizeCollection: finalizeCollection, exportCheckpoint: exportCheckpoint, exportCollection: exportCollection,
+        createPilotManifest: createPilotManifest, validatePilotCheckpoint: validatePilotCheckpoint,
+        getPilotWorkUnit: getPilotWorkUnit, ingestPilotWorkUnit: ingestPilotWorkUnit,
+        exportPilotCheckpoint: exportPilotCheckpoint };
 }));
