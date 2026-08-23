@@ -100,6 +100,16 @@ function loadHistoricalMismatchUI(options = {}) {
     if (options.outcomeExport !== false) elements.exportHistoricalMismatchOutcomes = element("exportHistoricalMismatchOutcomes");
     if (options.rrCapAnalyze !== false) elements.analyzeHistoricalRrCapScenarios = element("analyzeHistoricalRrCapScenarios");
     if (options.rrCapExport !== false) elements.exportHistoricalRrCapScenarios = element("exportHistoricalRrCapScenarios");
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => { elements[id] = element(id); });
+    ["historicalRrCapPilotMode","historicalRrCapPilotSplit","historicalRrCapPilotLimit","historicalRrCapPilotStatus",
+        "historicalRrCapPilotUnits","historicalRrCapPilotRevision","historicalRrCapPilotReadiness","historicalRrCapPilotWarning",
+        "historicalRrCapBoundedPilot","historicalRrCapPilotSymbol","historicalRrCapPilotInterval",
+        "createHistoricalRrCapPilot","startHistoricalRrCapPilot","pauseHistoricalRrCapPilot","resumeHistoricalRrCapPilot",
+        "cancelHistoricalRrCapPilotUnit","exportHistoricalRrCapPilotCheckpoint"].forEach(id => { elements[id] = element(id); });
+    elements.historicalRrCapPilotSymbol.value="BTCUSDT";elements.historicalRrCapPilotInterval.value="4h";
     const document = { readyState: options.readyState || "complete", body: element("body"),
         getElementById(id) { return elements[id] || null; }, createElement(tag) { return element(tag); }, addEventListener() {} };
     const analysis = { valid: true, status: "REVIEW_ITEMS_FOUND", observationCount: 2, comparableCount: 2,
@@ -133,7 +143,7 @@ function loadHistoricalMismatchUI(options = {}) {
             analyzeOutcomes() { return clone(outcome); }, exportOutcomeAnalysis() { return "{}"; } }; },
         installRrCapDependency() { context.window.HNDStructureHistoricalRrCapScenarioAnalyzer = {
             analyzeScenarios() { return clone(rrCap); }, exportScenarioAnalysis() { return "{}"; } }; },
-        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls();", context); } };
+        setup() { vm.runInNewContext("setupStructureHistoricalMismatchControls(); setupStructureHistoricalOutcomeControls(); setupStructureHistoricalRrCapControls(); setupStructureHistoricalRrCapCollectionControls(); setupStructureHistoricalRrCapPilotControls();", context); } };
 }
 
 function candles() {
@@ -422,6 +432,46 @@ test("historical RR cap analyze binds without export button", () => {
 
 test("historical RR cap export filename is deterministic", () => {
     assert.match(uiCode, /HNDai-historical-rr-cap-scenarios-/);
+});
+
+test("historical collection IDs, safety, immutable periods and readiness NONE are present", () => {
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => assert.match(html, new RegExp(`id="${id}"`)));
+    assert.match(html, /DIAGNOSTIC COLLECTION ONLY — DOES NOT CHANGE LIVE TP OR READINESS/);
+    assert.match(html, /id="historicalRrCapCollectionReadiness">NONE/);
+    assert.match(html, /Exploratory 2022-01-01–2024-12-31; OOS 2025-01-01–2026-06-30/);
+});
+
+test("historical collection listeners are idempotent and independent", () => {
+    const fixture = loadHistoricalMismatchUI(); fixture.setup(); fixture.setup();
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit",
+        "exportHistoricalRrCapCollectionCheckpoint","importHistoricalRrCapCollectionCheckpoint",
+        "exportHistoricalRrCapCollectionFinal"].forEach(id => assert.strictEqual(fixture.listenerCount(id), 1));
+});
+
+test("collection storage namespace is isolated and raw candles are forbidden", () => {
+    assert.match(uiCode, /HNDaiHistoricalRrCapEvidenceCollectionV1/);
+    assert.match(uiCode, /RAW_CANDLE_PERSISTENCE_FORBIDDEN/);
+    assert.ok(!uiCode.includes("localStorage.setItem(\"HNDaiHistoricalRrCapEvidenceCollectionV1"));
+});
+
+test("bounded pilot UI has authorized selectors and immutable one-unit exploratory labels",()=>{
+    assert.match(html,/BOUNDED PILOT — 1 UNIT ONLY/);assert.match(html,/PILOT ONLY — NOT PART OF FULL COLLECTION — DOES NOT CHANGE LIVE TP OR READINESS/);
+    assert.match(html,/id="historicalRrCapPilotSplit">EXPLORATORY/);assert.match(html,/id="historicalRrCapPilotLimit">1/);
+    assert.match(html,/id="historicalRrCapPilotReadiness">NONE/);
+    ["BTCUSDT","ETHUSDT","SOLUSDT","15m","4h"].forEach(value=>assert.match(html,new RegExp(`<option>${value}</option>`)));
+});
+
+test("bounded pilot listeners are idempotent",()=>{const fixture=loadHistoricalMismatchUI();fixture.setup();fixture.setup();
+    ["createHistoricalRrCapPilot","startHistoricalRrCapPilot","pauseHistoricalRrCapPilot","resumeHistoricalRrCapPilot",
+        "cancelHistoricalRrCapPilotUnit","exportHistoricalRrCapPilotCheckpoint"].forEach(id=>assert.strictEqual(fixture.listenerCount(id),1));});
+
+test("pilot IndexedDB namespace and store key are separate from full collection",()=>{
+    assert.match(uiCode,/HNDaiHistoricalRrCapBoundedPilotV1/);assert.match(uiCode,/manifestKey:"activePilot"/);
+    assert.match(uiCode,/mode:"PILOT_ONLY"/);assert.match(uiCode,/maximumCompletedUnits:1/);
 });
 
 let passed = 0;

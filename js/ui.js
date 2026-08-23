@@ -26,6 +26,13 @@ let lastStructureHistoricalOutcomeAnalysis = null;
 let structureHistoricalRrCapAnalyzeButton = null;
 let structureHistoricalRrCapExportButton = null;
 let lastStructureHistoricalRrCapScenarioAnalysis = null;
+let structureHistoricalRrCapCollectionButtons = new Map();
+let structureHistoricalRrCapCollectionController = null;
+let lastStructureHistoricalRrCapCollectionSnapshot = null;
+let structureHistoricalRrCapPilotButtons = new Map();
+let structureHistoricalRrCapPilotController = null;
+let lastStructureHistoricalRrCapPilotSnapshot = null;
+let historicalRrCapPilotRunning = false;
 const HND_STRUCTURE_SHADOW_IMPORT_LIMIT = 5 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_TOTAL_LIMIT = 25 * 1024 * 1024;
 const HND_STRUCTURE_SHADOW_COLLECTION_FILE_LIMIT = 20;
@@ -1052,6 +1059,163 @@ setupStructureHistoricalRrCapControls();
 if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", setupStructureHistoricalRrCapControls, { once: true });
 
+function createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb = window.indexedDB, options = {}) {
+    const databaseName = options.databaseName || "HNDaiHistoricalRrCapEvidenceCollectionV1";
+    const manifestKey = options.manifestKey || "active";
+    const stores = ["manifests", "units", "dedup", "audit"];
+    function open() { return new Promise((resolve, reject) => {
+        if (!indexedDb) { reject(new Error("INDEXEDDB_UNAVAILABLE")); return; }
+        const request = indexedDb.open(databaseName, 1);
+        request.onupgradeneeded = () => stores.forEach(name => { if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name); });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("INDEXEDDB_OPEN_FAILED"));
+    }); }
+    return {
+        async load() { const database = await open(); return new Promise((resolve, reject) => {
+            const request = database.transaction(["manifests"], "readonly").objectStore("manifests").get(manifestKey);
+            request.onsuccess = () => { database.close(); resolve(request.result ? JSON.parse(JSON.stringify(request.result)) : null); };
+            request.onerror = () => { database.close(); reject(request.error || new Error("INDEXEDDB_READ_FAILED")); };
+        }); },
+        async commit(checkpoint) { const safe = JSON.parse(JSON.stringify(checkpoint));
+            if (JSON.stringify(safe).includes("rawCandles")) throw new Error("RAW_CANDLE_PERSISTENCE_FORBIDDEN");
+            const database = await open(); await new Promise((resolve, reject) => {
+                const transaction = database.transaction(stores, "readwrite");
+                transaction.oncomplete = () => { database.close(); resolve(); };
+                transaction.onabort = transaction.onerror = () => { const error = transaction.error || new Error("INDEXEDDB_TRANSACTION_ABORTED"); database.close(); reject(error); };
+                stores.forEach(name => transaction.objectStore(name).clear()); transaction.objectStore("manifests").put(safe, manifestKey);
+                safe.units.forEach(unit => transaction.objectStore("units").put(unit, unit.unitId));
+                transaction.objectStore("dedup").put({ planIds:safe.planIds, eventIds:safe.eventIds, clusters:safe.clusters }, manifestKey);
+                safe.audit.forEach(item => transaction.objectStore("audit").put(item, item.sequence));
+            }); return safe; },
+        async clearRunning() { return undefined; }, databaseName
+    };
+}
+
+function getHistoricalRrCapCollectionController() {
+    if (structureHistoricalRrCapCollectionController) return structureHistoricalRrCapCollectionController;
+    const factory = window.HNDStructureHistoricalRrCapEvidenceCollectionController;
+    if (!factory?.createController) return null;
+    structureHistoricalRrCapCollectionController = factory.createController({ store:createHistoricalRrCapCollectionIndexedDbAdapter() });
+    return structureHistoricalRrCapCollectionController;
+}
+
+function updateHistoricalRrCapCollectionUI(snapshot = null, warning = "") {
+    const value = snapshot || {}, checkpoint = value.checkpoint || {}, aggregate = checkpoint.schemaVersion
+        ? window.HNDStructureHistoricalRrCapEvidenceCollection?.aggregateCollection?.(checkpoint) : null;
+    const state = value.state || "IDLE", next = value.progress?.nextUnit;
+    setText("historicalRrCapCollectionStatus", state.replaceAll("_", " "));
+    setText("historicalRrCapCollectionSplit", next?.split || "-");
+    setText("historicalRrCapCollectionUnits", `${value.progress?.completedUnits || 0} / ${value.progress?.totalUnits || 0}`);
+    setText("historicalRrCapCollectionExploratory", `${aggregate?.splits?.EXPLORATORY?.sampleCount || 0} / 300`);
+    setText("historicalRrCapCollectionOos", `${aggregate?.splits?.OOS?.sampleCount || 0} / 100`);
+    setText("historicalRrCapCollectionRevision", checkpoint.revision || 0);
+    setText("historicalRrCapCollectionReadiness", "NONE");
+    setText("historicalRrCapCollectionWarning", warning || value.error || "");
+    const section = document.getElementById("historicalRrCapCollection");
+    section?.classList?.forEach?.(name => { if (name.startsWith("collection-")) section.classList.remove(name); });
+    section?.classList?.add(`collection-${state.toLowerCase().replaceAll("_", "-")}`);
+    const body = document.getElementById("historicalRrCapCollectionCoverageBody"); if (!body) return; body.replaceChildren();
+    const rows = []; ["EXPLORATORY","OOS"].forEach(split => { const splitValue = aggregate?.splits?.[split]; if (!splitValue) return;
+        Object.keys(splitValue.cells).sort().forEach(key => { const [market,interval] = key.split("|"), count = splitValue.cells[key].sampleCount;
+            rows.push([split,market,interval,count,count >= checkpoint.config.targets[split.toLowerCase()].perCellMinimum ? "YES" : "NO"]); }); });
+    (rows.length ? rows : [["No collection checkpoint","-","-",0,"NO"]]).forEach(values => { const row=document.createElement("tr");
+        values.forEach(valueItem=>{const cell=document.createElement("td");cell.textContent=String(valueItem);row.appendChild(cell);});body.appendChild(row); });
+}
+
+function downloadHistoricalRrCapCollectionJson(json, label) {
+    if (typeof json !== "string") { updateHistoricalRrCapCollectionUI(lastStructureHistoricalRrCapCollectionSnapshot, "Export is not available for this state."); return; }
+    const blob=new Blob([json],{type:"application/json;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=`HNDai-historical-rr-cap-collection-${label}-${new Date().toISOString().slice(0,10)}.json`;
+    document.body?.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
+async function runHistoricalRrCapCollection(action) { const controller=getHistoricalRrCapCollectionController();
+    if(!controller){updateHistoricalRrCapCollectionUI(null,"Collection dependency unavailable.");return;}
+    if(historicalRrCapPilotRunning){updateHistoricalRrCapCollectionUI(controller.getSnapshot(),"Full Collection cannot start while the bounded pilot is running.");return;}
+    try { const result=await controller[action]();lastStructureHistoricalRrCapCollectionSnapshot=result;updateHistoricalRrCapCollectionUI(result); }
+    catch(error){updateHistoricalRrCapCollectionUI(controller.getSnapshot(),"Collection failed closed.");} }
+function setupStructureHistoricalRrCapCollectionControls() {
+    const handlers={createHistoricalRrCapCollection:async()=>{const controller=getHistoricalRrCapCollectionController();if(!controller)return;const result=await controller.create();lastStructureHistoricalRrCapCollectionSnapshot=result;updateHistoricalRrCapCollectionUI(result);},
+        startHistoricalRrCapCollection:()=>runHistoricalRrCapCollection("start"),pauseHistoricalRrCapCollection:()=>{const result=getHistoricalRrCapCollectionController()?.pause();lastStructureHistoricalRrCapCollectionSnapshot=result;updateHistoricalRrCapCollectionUI(result);},
+        resumeHistoricalRrCapCollection:()=>runHistoricalRrCapCollection("resume"),cancelHistoricalRrCapCollectionUnit:()=>{const result=getHistoricalRrCapCollectionController()?.cancelCurrentUnit();lastStructureHistoricalRrCapCollectionSnapshot=result;updateHistoricalRrCapCollectionUI(result);},
+        exportHistoricalRrCapCollectionCheckpoint:()=>downloadHistoricalRrCapCollectionJson(window.HNDStructureHistoricalRrCapEvidenceCollection?.exportCheckpoint?.(lastStructureHistoricalRrCapCollectionSnapshot?.checkpoint),"checkpoint"),
+        importHistoricalRrCapCollectionCheckpoint:()=>document.getElementById("historicalRrCapCollectionCheckpointFile")?.click(),
+        exportHistoricalRrCapCollectionFinal:()=>{const core=window.HNDStructureHistoricalRrCapEvidenceCollection,result=core?.finalizeCollection?.(lastStructureHistoricalRrCapCollectionSnapshot?.checkpoint);downloadHistoricalRrCapCollectionJson(core?.exportCollection?.(result),"final");}};
+    Object.keys(handlers).forEach(id=>{const button=document.getElementById(id);if(button&&structureHistoricalRrCapCollectionButtons.get(id)!==button){button.addEventListener("click",handlers[id]);structureHistoricalRrCapCollectionButtons.set(id,button);}});
+    const input=document.getElementById("historicalRrCapCollectionCheckpointFile");
+    if(input&&structureHistoricalRrCapCollectionButtons.get("checkpointFile")!==input){input.addEventListener("change",async event=>{try{const file=event.target.files?.[0];
+        if(!file||file.size>25*1024*1024)throw new Error("INVALID_IMPORT_FILE");const parsed=JSON.parse(await file.text()),validation=window.HNDStructureHistoricalRrCapEvidenceCollection.validateCheckpoint(parsed);
+        if(!validation.valid)throw new Error(validation.error);await createHistoricalRrCapCollectionIndexedDbAdapter().commit(parsed);structureHistoricalRrCapCollectionController=null;await runHistoricalRrCapCollection("restore");}
+        catch(error){updateHistoricalRrCapCollectionUI(lastStructureHistoricalRrCapCollectionSnapshot,"Checkpoint import rejected.");}finally{event.target.value="";}});structureHistoricalRrCapCollectionButtons.set("checkpointFile",input);}
+}
+window.createHistoricalRrCapCollectionIndexedDbAdapter=createHistoricalRrCapCollectionIndexedDbAdapter;
+setupStructureHistoricalRrCapCollectionControls();
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",async()=>{setupStructureHistoricalRrCapCollectionControls();const controller=getHistoricalRrCapCollectionController();
+    if(controller){try{const restored=await controller.restore();if(restored.checkpoint){lastStructureHistoricalRrCapCollectionSnapshot=restored;updateHistoricalRrCapCollectionUI(restored);}}catch(error){updateHistoricalRrCapCollectionUI(null,"Stored checkpoint rejected.");}}},{once:true});
+
+function createHistoricalRrCapPilotIndexedDbAdapter(indexedDb = window.indexedDB) {
+    return createHistoricalRrCapCollectionIndexedDbAdapter(indexedDb, {
+        databaseName:"HNDaiHistoricalRrCapBoundedPilotV1", manifestKey:"activePilot"
+    });
+}
+function getHistoricalRrCapPilotController() {
+    if (structureHistoricalRrCapPilotController) return structureHistoricalRrCapPilotController;
+    const factory=window.HNDStructureHistoricalRrCapEvidenceCollectionController;
+    if(!factory?.createController)return null;
+    structureHistoricalRrCapPilotController=factory.createController({store:createHistoricalRrCapPilotIndexedDbAdapter()});
+    return structureHistoricalRrCapPilotController;
+}
+function updateHistoricalRrCapPilotUI(snapshot=null,warning="") {
+    const value=snapshot||{},checkpoint=value.checkpoint||{},state=value.state||"IDLE";
+    setText("historicalRrCapPilotStatus",state.replaceAll("_"," "));
+    setText("historicalRrCapPilotUnits",`${value.progress?.completedUnits||0} / 1`);
+    setText("historicalRrCapPilotRevision",checkpoint.revision||0);
+    setText("historicalRrCapPilotReadiness","NONE");
+    setText("historicalRrCapPilotWarning",warning||value.error||"");
+    const section=document.getElementById("historicalRrCapBoundedPilot");
+    section?.classList?.forEach?.(name=>{if(name.startsWith("pilot-"))section.classList.remove(name);});
+    section?.classList?.add(`pilot-${state.toLowerCase().replaceAll("_","-")}`);
+    const locked=checkpoint.mode==="PILOT_ONLY";
+    const symbol=document.getElementById("historicalRrCapPilotSymbol"),interval=document.getElementById("historicalRrCapPilotInterval");
+    if(symbol){if(checkpoint.pilotConfig?.symbol)symbol.value=checkpoint.pilotConfig.symbol;symbol.disabled=locked;}
+    if(interval){if(checkpoint.pilotConfig?.interval)interval.value=checkpoint.pilotConfig.interval;interval.disabled=locked;}
+}
+async function createHistoricalRrCapPilotFromUI() {
+    const controller=getHistoricalRrCapPilotController();if(!controller)return;
+    const fullState=getHistoricalRrCapCollectionController()?.getSnapshot?.().state;
+    if(["RUNNING","OOS_RUNNING","PAUSING"].includes(fullState)){updateHistoricalRrCapPilotUI(null,"Pilot cannot be created while Full Collection is running.");return;}
+    const config={mode:"PILOT_ONLY",symbol:document.getElementById("historicalRrCapPilotSymbol")?.value,
+        interval:document.getElementById("historicalRrCapPilotInterval")?.value,split:"EXPLORATORY",maximumCompletedUnits:1};
+    try{const result=await controller.createPilot(config);lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);}
+    catch(error){updateHistoricalRrCapPilotUI(controller.getPilotSnapshot(),"Pilot creation failed closed.");}
+}
+async function runHistoricalRrCapPilot(action) {
+    const controller=getHistoricalRrCapPilotController();if(!controller)return;
+    const fullState=getHistoricalRrCapCollectionController()?.getSnapshot?.().state;
+    if(["RUNNING","OOS_RUNNING","PAUSING"].includes(fullState)){updateHistoricalRrCapPilotUI(lastStructureHistoricalRrCapPilotSnapshot,"Pilot cannot start while Full Collection is running.");return;}
+    historicalRrCapPilotRunning=true;
+    try{const result=await controller[action]();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);}
+    catch(error){updateHistoricalRrCapPilotUI(controller.getPilotSnapshot(),"Pilot failed closed.");}
+    finally{historicalRrCapPilotRunning=false;}
+}
+function exportHistoricalRrCapPilotCheckpoint() {
+    const json=window.HNDStructureHistoricalRrCapEvidenceCollection?.exportPilotCheckpoint?.(lastStructureHistoricalRrCapPilotSnapshot?.checkpoint);
+    if(typeof json!=="string"){updateHistoricalRrCapPilotUI(lastStructureHistoricalRrCapPilotSnapshot,"Pilot checkpoint export unavailable.");return;}
+    const blob=new Blob([json],{type:"application/json;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=`HNDai-historical-rr-cap-bounded-pilot-${new Date().toISOString().slice(0,10)}.json`;
+    document.body?.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
+function setupStructureHistoricalRrCapPilotControls() {
+    const handlers={createHistoricalRrCapPilot:createHistoricalRrCapPilotFromUI,startHistoricalRrCapPilot:()=>runHistoricalRrCapPilot("startPilot"),
+        pauseHistoricalRrCapPilot:()=>{const result=getHistoricalRrCapPilotController()?.pausePilot();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);},
+        resumeHistoricalRrCapPilot:()=>runHistoricalRrCapPilot("resumePilot"),cancelHistoricalRrCapPilotUnit:()=>{const result=getHistoricalRrCapPilotController()?.cancelPilotUnit();lastStructureHistoricalRrCapPilotSnapshot=result;updateHistoricalRrCapPilotUI(result);},
+        exportHistoricalRrCapPilotCheckpoint:exportHistoricalRrCapPilotCheckpoint};
+    Object.keys(handlers).forEach(id=>{const button=document.getElementById(id);if(button&&structureHistoricalRrCapPilotButtons.get(id)!==button){button.addEventListener("click",handlers[id]);structureHistoricalRrCapPilotButtons.set(id,button);}});
+}
+window.createHistoricalRrCapPilotIndexedDbAdapter=createHistoricalRrCapPilotIndexedDbAdapter;
+setupStructureHistoricalRrCapPilotControls();
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",async()=>{setupStructureHistoricalRrCapPilotControls();const controller=getHistoricalRrCapPilotController();
+    if(controller){try{const restored=await controller.restorePilot();if(restored.checkpoint){lastStructureHistoricalRrCapPilotSnapshot=restored;updateHistoricalRrCapPilotUI(restored);}}catch(error){updateHistoricalRrCapPilotUI(null,"Stored pilot checkpoint rejected.");}}},{once:true});
+
 function updateActiveTradeUI(price, tradeState = null) {
     const trade = tradeState?.activeTrade || activeTrade || null;
     const pending = tradeState?.pendingExecution || null;
@@ -1236,6 +1400,8 @@ function updateUI(
     setupStructureHistoricalMismatchControls();
     setupStructureHistoricalOutcomeControls();
     setupStructureHistoricalRrCapControls();
+    setupStructureHistoricalRrCapCollectionControls();
+    setupStructureHistoricalRrCapPilotControls();
     setupTradeJournalExportControls();
 
     setText("trend", result?.trend ?? "-");
@@ -1283,3 +1449,5 @@ setupStructureHistoricalShadowReplayControls();
 setupStructureHistoricalMismatchControls();
 setupStructureHistoricalOutcomeControls();
 setupStructureHistoricalRrCapControls();
+setupStructureHistoricalRrCapCollectionControls();
+setupStructureHistoricalRrCapPilotControls();

@@ -19,7 +19,7 @@ async function openPage(browser, baseUrl) { const page = await browser.newPage()
             return original.call(this, type, listener, options); }; });
     await page.goto(`${baseUrl}/index.html`, { waitUntil: "load" }); return page; }
 let page;
-test("actual served ui asset version is deterministic", async () => assert.match(fs.readFileSync(path.join(root,"index.html"),"utf8"),/<script src="js\/ui\.js\?v=6"><\/script>/));
+test("actual served ui asset version is deterministic", async () => assert.match(fs.readFileSync(path.join(root,"index.html"),"utf8"),/<script src="js\/ui\.js\?v=7"><\/script>/));
 test("historical plan evidence browser dependency loads", async () => assert.strictEqual(await page.evaluate(() =>
     typeof window.HNDStructureHistoricalPlanEvidence?.buildPlanEvidence), "function"));
 test("historical RR cap browser dependency loads after authoritative outcome analyzer", async () => {
@@ -82,7 +82,42 @@ test("real RR cap click renders five scenarios, exports JSON, and isolates criti
 test("RR cap script order is outcome analyzer then scenario analyzer then UI", async () => {
     const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
     assert.ok(html.indexOf("structureHistoricalMismatchOutcomeAnalyzer.js")<html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js"));
-    assert.ok(html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js")<html.indexOf("js/ui.js?v=6")); });
+    assert.ok(html.indexOf("structureHistoricalRrCapScenarioAnalyzer.js")<html.indexOf("structureHistoricalRrCapEvidenceCollection.js"));
+    assert.ok(html.indexOf("structureHistoricalRrCapEvidenceCollection.js")<html.indexOf("structureHistoricalRrCapEvidenceCollectionController.js"));
+    assert.ok(html.indexOf("structureHistoricalRrCapEvidenceCollectionController.js")<html.indexOf("js/ui.js?v=7")); });
+test("collection lifecycle binds each control once", async()=>{const counts=await page.evaluate(()=>window.__hndListenerCounts);
+    ["createHistoricalRrCapCollection","startHistoricalRrCapCollection","pauseHistoricalRrCapCollection",
+        "resumeHistoricalRrCapCollection","cancelHistoricalRrCapCollectionUnit","exportHistoricalRrCapCollectionCheckpoint",
+        "importHistoricalRrCapCollectionCheckpoint","exportHistoricalRrCapCollectionFinal"].forEach(id=>assert.strictEqual(counts[`${id}:click`],1));});
+test("bounded pilot controls bind once",async()=>{const counts=await page.evaluate(()=>window.__hndListenerCounts);
+    ["createHistoricalRrCapPilot","startHistoricalRrCapPilot","pauseHistoricalRrCapPilot","resumeHistoricalRrCapPilot",
+        "cancelHistoricalRrCapPilotUnit","exportHistoricalRrCapPilotCheckpoint"].forEach(id=>assert.strictEqual(counts[`${id}:click`],1));});
+test("create persists safe checkpoint and reload resumes without network", async()=>{const criticalBefore=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));
+    await page.locator("#createHistoricalRrCapCollection").click();await page.waitForFunction(()=>document.querySelector("#historicalRrCapCollectionStatus")?.textContent==="READY");
+    const stored=await page.evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open("HNDaiHistoricalRrCapEvidenceCollectionV1");request.onsuccess=()=>{const db=request.result,get=db.transaction(["manifests"],"readonly").objectStore("manifests").get("active");get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);};request.onerror=()=>reject(request.error);}));
+    assert.strictEqual(stored.countsTowardLiveReadiness,false);assert.strictEqual(stored.readiness,"NONE");assert.ok(!JSON.stringify(stored).includes("rawCandles"));
+    await page.reload({waitUntil:"load"});await page.waitForFunction(()=>document.querySelector("#historicalRrCapCollectionRevision")?.textContent==="0");
+    assert.strictEqual(await page.locator("#historicalRrCapCollectionReadiness").textContent(),"NONE");
+    const criticalAfter=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));assert.strictEqual(criticalAfter,criticalBefore);});
+test("fixture-only bounded pilot creates, runs one unit, exports, reloads and cannot resume a second",async()=>{
+    const criticalBefore=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));
+    await page.evaluate(()=>{const schemas={pager:"HND_STRUCTURE_HISTORICAL_REPLAY_BINANCE_PAGER_V1",replay:"HND_STRUCTURE_HISTORICAL_SHADOW_REPLAY_V1",mismatch:"HND_STRUCTURE_HISTORICAL_MISMATCH_ANALYSIS_V1",outcome:"HND_STRUCTURE_HISTORICAL_MISMATCH_OUTCOME_V1",scenario:"HND_STRUCTURE_HISTORICAL_RR_CAP_SCENARIO_ANALYSIS_V1"};window.__pilotPagerCalls=0;
+        window.HNDStructureHistoricalReplayBinancePager={getSchemaVersion:()=>schemas.pager,fetchClosedCandles:async options=>{window.__pilotPagerCalls+=1;const step=options.interval==="4h"?14400000:900000,first=options.evaluationCutoffTime-(options.candleCount-1)*step;return{valid:true,schemaVersion:schemas.pager,candles:Array.from({length:options.candleCount},(_,index)=>{const closeTime=first+index*step;return{openTime:closeTime-step+1,closeTime,open:100,high:101,low:99,close:100,volume:1};})};}};
+        window.HNDStructureHistoricalShadowReplay={getSchemaVersion:()=>schemas.replay,getDefaultConfig:()=>({symbol:"BTCUSDT",interval:"15m",warmupCandles:250,maximumEvaluationCandles:1,includeNonComparable:true,evaluationCutoffTime:1}),runReplay:(rows,cfg)=>({valid:true,schemaVersion:schemas.replay,source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,symbol:cfg.symbol,interval:cfg.interval,evaluationCutoffTime:cfg.evaluationCutoffTime,observations:[]})};
+        window.HNDStructureHistoricalMismatchAnalyzer={getSchemaVersion:()=>schemas.mismatch,analyzeReplay:()=>({valid:true,schemaVersion:schemas.mismatch,source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,status:"NO_REVIEW_ITEMS",mismatchCount:0,reviewItems:[]})};
+        window.HNDStructureHistoricalMismatchOutcomeAnalyzer={getSchemaVersion:()=>schemas.outcome,getDefaultPolicy:()=>({maximumForwardBars:24,includeMatches:false}),analyzeOutcomes:()=>({valid:true,schemaVersion:schemas.outcome,source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,outcomeItems:[]})};
+        window.HNDStructureHistoricalRrCapScenarioAnalyzer={getSchemaVersion:()=>schemas.scenario,getDefaultPolicy:()=>({maximumForwardBars:24,includeMatches:false}),analyzeScenarios:()=>({valid:true,schemaVersion:schemas.scenario,source:"HISTORICAL_REPLAY",countsTowardLiveReadiness:false,scenarioItems:[]})};
+        structureHistoricalRrCapPilotController=null;document.querySelector("#historicalRrCapPilotSymbol").value="BTCUSDT";document.querySelector("#historicalRrCapPilotInterval").value="4h";});
+    await page.locator("#createHistoricalRrCapPilot").click();await page.waitForFunction(()=>document.querySelector("#historicalRrCapPilotStatus")?.textContent==="PILOT READY");
+    await page.locator("#startHistoricalRrCapPilot").click();await page.waitForFunction(()=>document.querySelector("#historicalRrCapPilotStatus")?.textContent==="PILOT COMPLETED PAUSED");
+    assert.strictEqual(await page.evaluate(()=>window.__pilotPagerCalls),1);assert.strictEqual(await page.locator("#historicalRrCapPilotUnits").textContent(),"1 / 1");assert.strictEqual(await page.locator("#historicalRrCapPilotReadiness").textContent(),"NONE");
+    const downloadPromise=page.waitForEvent("download");await page.locator("#exportHistoricalRrCapPilotCheckpoint").click();const download=await downloadPromise,downloadPath=await download.path(),exported=JSON.parse(fs.readFileSync(downloadPath,"utf8"));
+    assert.strictEqual(exported.mode,"PILOT_ONLY");assert.strictEqual(exported.exportSchemaVersion,"HND_STRUCTURE_HISTORICAL_RR_CAP_BOUNDED_PILOT_EXPORT_V1");assert.match(download.suggestedFilename(),/bounded-pilot/);
+    await page.reload({waitUntil:"load"});await page.waitForFunction(()=>document.querySelector("#historicalRrCapPilotStatus")?.textContent==="PILOT COMPLETED PAUSED");
+    await page.evaluate(()=>{window.__pilotResumeNetworkCalls=0;window.HNDAPI.fetchHistoricalKlinesPage=async()=>{window.__pilotResumeNetworkCalls+=1;throw new Error("FORBIDDEN_SECOND_UNIT");};});
+    await page.locator("#resumeHistoricalRrCapPilot").click();await page.waitForTimeout(50);assert.strictEqual(await page.evaluate(()=>window.__pilotResumeNetworkCalls),0);
+    assert.strictEqual(await page.locator("#historicalRrCapPilotStatus").textContent(),"PILOT COMPLETED PAUSED");
+    const criticalAfter=await page.evaluate(()=>JSON.stringify({setup:window.HNDSetupEngine?.getCurrentSetup?.(),plan:window.HNDTradePlanEngine?.getCurrentPlan?.(),trade:window.HNDTradeEngine?.getActiveTrade?.()}));assert.strictEqual(criticalAfter,criticalBefore);});
 (async()=>{const own=process.env.HND_TEST_BASE_URL?null:await localServer(),base=process.env.HND_TEST_BASE_URL||own.url;
     const browser=await chromium.launch({headless:true,executablePath:chromePath()}); let assertions=0;
     try{page=await openPage(browser,base);for(const item of tests){try{await item.fn();assertions+=1;}catch(error){console.error(`FAIL:${item.name}`);throw error;}}
